@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>利用者画面</title>
+<style>
+body{font-family:sans-serif;max-width:600px;margin:24px auto;padding:0 16px}
+.big{font-size:48px;font-weight:700}
+input{font-size:18px;padding:8px 10px;width:220px}
+button{font-size:18px;padding:8px 12px;margin-left:8px}
+.muted{color:#555}
+</style>
+</head>
+<body>
+<h1>整理券表示</h1>
+<div class="muted">現在の呼び出し番号</div>
+<div class="big" id="current">0</div>
+
+<div style="margin-top:16px">
+<input id="myNum" type="number" placeholder="あなたの番号">
+<button id="reg">登録</button>
+</div>
+<p class="muted">※ 自分の番号の「5つ前」になったら通知します。</p>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="script/user.js"></script>
+</body>
+</html>
