@@ -25,8 +25,8 @@ cors: { origin: allowList.length ? allowList : true, methods: ["GET","POST"] }
 
 let currentNumber = 0;
 
-const ADMIN_USER = process.env.ADMIN_USER || "admin";
-const ADMIN_PASS = process.env.ADMIN_PASS || "secret123";
+const ADMIN_USER = process.env.ADMIN_USER || "salesio";
+const ADMIN_PASS = process.env.ADMIN_PASS || "systemadmin";
 
 app.use("/admin", (req,res,next)=>{
 const user = auth(req);
