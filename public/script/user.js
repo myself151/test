@@ -19,7 +19,7 @@ alert(`番号 ${myNumber} を登録しました`);
 
 socket.on("updateNumber", num=>{
 currentEl.textContent=num;
-if(myNumber!==null&&!notified&&num>=myNumber-5){
+if(myNumber!==null&&!notified&&num>=myNumber-10){
 notified=true;
 if(Notification.permission==="granted"){
 new Notification("もうすぐ呼ばれます！",{body:`あなたの番号は ${myNumber} です`});
