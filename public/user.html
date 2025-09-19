@@ -9,6 +9,11 @@
 <h1>利用者画面</h1>
 <p>現在番号: <span id="currentNumber">0</span></p>
 
+<!-- 番号入力フォーム -->
+<label for="numberInput">整理券番号を入力:</label>
+<input type="number" id="numberInput" min="1">
+<button id="registerBtn">登録</button>
+
 <script>
 const currentNumberElem = document.getElementById("currentNumber");
 const socket = io();
@@ -30,21 +35,23 @@ if (Notification.permission !== "granted") {
   Notification.requestPermission();
 }
 
-// --- URLパラメータから番号自動登録 ---
-const urlParams = new URLSearchParams(window.location.search);
-const myNumber = parseInt(urlParams.get("num"));
-if (myNumber) {
+// --- 登録ボタン処理 ---
+document.getElementById("registerBtn").onclick = () => {
+  const myNumber = parseInt(document.getElementById("numberInput").value);
+  if (!myNumber) return alert("番号を入力してください");
+
   fetch("/user/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ number: myNumber })
-  }).then(res => res.json())
+  })
+    .then(res => res.json())
     .then(data => {
       if (data.success) {
-        console.log("番号登録完了:", myNumber);
+        alert(`番号 ${myNumber} を登録しました`);
       }
     });
-}
+};
 
 // --- フォールバック ポーリング（3秒ごと） ---
 setInterval(async () => {
