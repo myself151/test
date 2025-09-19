@@ -13,20 +13,20 @@
 const currentNumberElem = document.getElementById("currentNumber");
 const socket = io();
 
-// WebSocketで更新
+// WebSocketでリアルタイム更新
 socket.on("update", (data) => {
-currentNumberElem.textContent = data.currentNumber;
+  currentNumberElem.textContent = data.currentNumber;
 });
 
-// フォールバック ポーリング（3秒）
+// フォールバック ポーリング（3秒ごと）
 setInterval(async () => {
-try {
-const res = await fetch("/api/status", { cache: "no-store" });
-const data = await res.json();
-currentNumberElem.textContent = data.currentNumber;
-} catch (e) {
-console.error("番号取得エラー", e);
-}
+  try {
+    const res = await fetch("/api/status", { cache: "no-store" });
+    const data = await res.json();
+    currentNumberElem.textContent = data.currentNumber;
+  } catch (e) {
+    console.error("番号取得エラー", e);
+  }
 }, 3000);
 </script>
 </body>
