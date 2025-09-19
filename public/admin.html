@@ -15,20 +15,22 @@
 const currentNumberElem = document.getElementById("currentNumber");
 const socket = io();
 
+// WebSocketで番号更新
 socket.on("update", (data) => {
-currentNumberElem.textContent = data.currentNumber;
+  currentNumberElem.textContent = data.currentNumber;
 });
 
+// 管理者操作
 document.getElementById("nextBtn").onclick = async () => {
-const res = await fetch("/admin/next", { method: "POST" });
-const data = await res.json();
-currentNumberElem.textContent = data.currentNumber;
+  const res = await fetch("/admin/next", { method: "POST" });
+  const data = await res.json();
+  currentNumberElem.textContent = data.currentNumber;
 };
 
 document.getElementById("prevBtn").onclick = async () => {
-const res = await fetch("/admin/prev", { method: "POST" });
-const data = await res.json();
-currentNumberElem.textContent = data.currentNumber;
+  const res = await fetch("/admin/prev", { method: "POST" });
+  const data = await res.json();
+  currentNumberElem.textContent = data.currentNumber;
 };
 </script>
 </body>
