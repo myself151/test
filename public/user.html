@@ -3,26 +3,31 @@
 <head>
 <meta charset="UTF-8">
 <title>利用者画面</title>
-<style>
-body{font-family:sans-serif;max-width:600px;margin:24px auto;padding:0 16px}
-.big{font-size:48px;font-weight:700}
-input{font-size:18px;padding:8px 10px;width:220px}
-button{font-size:18px;padding:8px 12px;margin-left:8px}
-.muted{color:#555}
-</style>
+<script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
-<h1>整理券表示</h1>
-<div class="muted">現在の呼び出し番号</div>
-<div class="big" id="current">0</div>
+<h1>利用者画面</h1>
+<p>現在番号: <span id="currentNumber">0</span></p>
 
-<div style="margin-top:16px">
-<input id="myNum" type="number" placeholder="あなたの番号">
-<button id="reg">登録</button>
-</div>
-<p class="muted">※ 自分の番号の「10番前」になったら通知します。</p>
+<script>
+const currentNumberElem = document.getElementById("currentNumber");
+const socket = io();
 
-<script src="/socket.io/socket.io.js"></script>
-<script src="script/user.js"></script>
+// WebSocketで更新
+socket.on("update", (data) => {
+currentNumberElem.textContent = data.currentNumber;
+});
+
+// フォールバック ポーリング（3秒）
+setInterval(async () => {
+try {
+const res = await fetch("/api/status", { cache: "no-store" });
+const data = await res.json();
+currentNumberElem.textContent = data.currentNumber;
+} catch (e) {
+console.error("番号取得エラー", e);
+}
+}, 3000);
+</script>
 </body>
 </html>
