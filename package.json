@@ -1,14 +1,17 @@
 {
-"name": "queue-system",
-"version": "1.0.0",
-"scripts": {
-"start": "node server.js"
-},
-"dependencies": {
-"basic-auth": "^2.0.1",
-"cors": "^2.8.5",
-"dotenv": "^16.4.5",
-"express": "^4.19.2",
-"socket.io": "^4.7.5"
-}
+  "name": "ticket-system",
+  "version": "1.0.0",
+  "description": "整理券管理システム（カメラなし簡易版）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "express-rate-limit": "^6.7.0",
+    "socket.io": "^4.7.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }
