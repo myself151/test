@@ -47,7 +47,7 @@ app.post("/admin/next", (req, res) => {
 
   // 通知判定: 番号が5つ前になったら通知
   userNumbers.forEach((num) => {
-    if (currentNumber === num - 5) {
+    if (currentNumber === num - 10) {
       io.emit("notify", { number: num });
     }
   });
