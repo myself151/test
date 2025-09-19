@@ -16,29 +16,44 @@
 
 <script>
 const currentNumberElem = document.getElementById("currentNumber");
+const numberInput = document.getElementById("numberInput");
+const registerBtn = document.getElementById("registerBtn");
+let myNumber = null;
+
+// WebSocket接続
 const socket = io();
 
-// --- 番号リアルタイム更新 ---
+// --- リアルタイム番号更新 ---
 socket.on("update", (data) => {
   currentNumberElem.textContent = data.currentNumber;
 });
 
 // --- 通知受信 ---
 socket.on("notify", (data) => {
-  if (Notification.permission === "granted") {
-    new Notification(`あなたの番号 ${data.number} が5つ前になりました！`);
+  if (myNumber && data.number === myNumber) {
+    if (Notification.permission === "granted") {
+      new Notification(`あなたの番号 ${myNumber} が5つ前になりました！`);
+    }
   }
 });
 
-// --- 通知許可リクエスト ---
-if (Notification.permission !== "granted") {
-  Notification.requestPermission();
+// --- 通知権限確認 ---
+function requestNotification() {
+  if (Notification.permission === "default") {
+    Notification.requestPermission().then(permission => {
+      if (permission !== "granted") {
+        alert("通知を有効にしてください");
+      }
+    });
+  }
 }
+requestNotification();
 
-// --- 登録ボタン処理 ---
-document.getElementById("registerBtn").onclick = () => {
-  const myNumber = parseInt(document.getElementById("numberInput").value);
-  if (!myNumber) return alert("番号を入力してください");
+// --- 番号登録 ---
+registerBtn.onclick = () => {
+  const val = parseInt(numberInput.value);
+  if (!val) return alert("番号を入力してください");
+  myNumber = val;
 
   fetch("/user/register", {
     method: "POST",
@@ -47,13 +62,11 @@ document.getElementById("registerBtn").onclick = () => {
   })
     .then(res => res.json())
     .then(data => {
-      if (data.success) {
-        alert(`番号 ${myNumber} を登録しました`);
-      }
+      if (data.success) alert(`番号 ${myNumber} を登録しました`);
     });
 };
 
-// --- フォールバック ポーリング（3秒ごと） ---
+// --- フォールバックポーリング（3秒ごと） ---
 setInterval(async () => {
   try {
     const res = await fetch("/api/status", { cache: "no-store" });
@@ -63,6 +76,7 @@ setInterval(async () => {
     console.error("番号取得エラー", e);
   }
 }, 3000);
+
 </script>
 </body>
 </html>
