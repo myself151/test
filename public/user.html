@@ -13,12 +13,40 @@
 const currentNumberElem = document.getElementById("currentNumber");
 const socket = io();
 
-// WebSocketでリアルタイム更新
+// --- 番号リアルタイム更新 ---
 socket.on("update", (data) => {
   currentNumberElem.textContent = data.currentNumber;
 });
 
-// フォールバック ポーリング（3秒ごと）
+// --- 通知受信 ---
+socket.on("notify", (data) => {
+  if (Notification.permission === "granted") {
+    new Notification(`あなたの番号 ${data.number} が5つ前になりました！`);
+  }
+});
+
+// --- 通知許可リクエスト ---
+if (Notification.permission !== "granted") {
+  Notification.requestPermission();
+}
+
+// --- URLパラメータから番号自動登録 ---
+const urlParams = new URLSearchParams(window.location.search);
+const myNumber = parseInt(urlParams.get("num"));
+if (myNumber) {
+  fetch("/user/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ number: myNumber })
+  }).then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        console.log("番号登録完了:", myNumber);
+      }
+    });
+}
+
+// --- フォールバック ポーリング（3秒ごと） ---
 setInterval(async () => {
   try {
     const res = await fetch("/api/status", { cache: "no-store" });
