@@ -56,3 +56,34 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+// 既存コードはそのまま
+
+// ユーザー番号を保持（必要であれば配列管理）
+let userNumbers = []; // 今回は番号を登録した利用者リストとして仮置き
+
+// --- 管理者操作の next に通知判定を追加 ---
+app.post("/admin/next", (req, res) => {
+  currentNumber++;
+  console.log("Next number:", currentNumber);
+
+  io.emit("update", { currentNumber });
+
+  // 通知判定
+  // userNumbers に登録済みの番号で、currentNumber +5になったら通知
+  userNumbers.forEach((num) => {
+    if (currentNumber === num - 5) {
+      io.emit("notify", { number: num });
+    }
+  });
+
+  res.json({ currentNumber });
+});
+
+// --- API for user to register their number ---
+app.post("/user/register", (req, res) => {
+  const { number } = req.body;
+  if (!userNumbers.includes(number)) {
+    userNumbers.push(number);
+  }
+  res.json({ success: true });
+});
