@@ -3,23 +3,33 @@
 <head>
 <meta charset="UTF-8">
 <title>管理者画面</title>
-<style>
-body{font-family:sans-serif;max-width:600px;margin:24px auto;padding:0 16px}
-h1{margin-bottom:8px}
-.row{display:flex;gap:12px}
-button{font-size:20px;padding:12px 20px;cursor:pointer}
-.num{font-size:48px;font-weight:700;margin:16px 0}
-</style>
+<script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
 <h1>管理者画面</h1>
-<div>現在の呼び出し番号</div>
-<div class="num" id="number">0</div>
-<div class="row">
-<button id="prev">前へ</button>
-<button id="next">次へ</button>
-</div>
-<script src="/socket.io/socket.io.js"></script>
-<script src="script/admin.js"></script>
+<p>現在番号: <span id="currentNumber">0</span></p>
+<button id="prevBtn">前へ</button>
+<button id="nextBtn">次へ</button>
+
+<script>
+const currentNumberElem = document.getElementById("currentNumber");
+const socket = io();
+
+socket.on("update", (data) => {
+currentNumberElem.textContent = data.currentNumber;
+});
+
+document.getElementById("nextBtn").onclick = async () => {
+const res = await fetch("/admin/next", { method: "POST" });
+const data = await res.json();
+currentNumberElem.textContent = data.currentNumber;
+};
+
+document.getElementById("prevBtn").onclick = async () => {
+const res = await fetch("/admin/prev", { method: "POST" });
+const data = await res.json();
+currentNumberElem.textContent = data.currentNumber;
+};
+</script>
 </body>
 </html>
