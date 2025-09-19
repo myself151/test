@@ -32,7 +32,7 @@ socket.on("update", (data) => {
 socket.on("notify", (data) => {
   if (myNumber && data.number === myNumber) {
     if (Notification.permission === "granted") {
-      new Notification(`あなたの番号 ${myNumber} が5つ前になりました！`);
+      new Notification(`あなたの番号 ${myNumber} が10個前になりました！`);
     }
   }
 });
