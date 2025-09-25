@@ -1,44 +1,18 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>利用者画面</title>
+<meta charset="UTF-8">
+<title>利用者画面</title>
 </head>
 <body>
-  <h1>利用者画面</h1>
-  <p>現在の番号: <span id="currentNumber">0</span></p>
-  <p>自分の番号を入力: <input type="number" id="myNumber"></p>
-  <button onclick="registerNumber()">登録</button>
+<h1>整理券利用者画面</h1>
+<label>整理券番号: <input type="number" id="ticket-number"></label>
+<button id="checkin-btn">チェックイン</button>
+<button id="cancel-btn">キャンセル</button>
 
-  <p id="notify" style="color:red; font-weight:bold;"></p>
+<h2>呼び出し番号: <span id="current-ticket">0</span></h2>
+<h2>スキップ番号: <span id="skipped-tickets"></span></h2>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script>
-    const socket = io();
-
-    // 番号登録
-    function registerNumber() {
-      const num = document.getElementById("myNumber").value;
-      if (num) {
-        socket.emit("register", num);
-        alert("登録しました: " + num);
-      }
-    }
-
-    // URLパラメータから自動登録
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("number")) {
-      document.getElementById("myNumber").value = params.get("number");
-      registerNumber();
-    }
-
-    socket.on("update", (data) => {
-      document.getElementById("currentNumber").textContent = data.currentNumber;
-    });
-
-    socket.on("notify", (data) => {
-      document.getElementById("notify").textContent = data.message;
-    });
-  </script>
+<script src="script.js"></script>
 </body>
 </html>
