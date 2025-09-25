@@ -1,28 +1,71 @@
 <!DOCTYPE html>
-<html>
+<html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>利用者画面</title>
+<meta charset="UTF-8">
+<title>整理券ユーザー画面</title>
+<style>
+body { font-family: 'Noto Sans JP', sans-serif; text-align:center; }
+#ticketInput { font-size: 1.2em; width: 60px; text-align:center; }
+#submitBtn { font-size: 1em; margin-left: 10px; }
+#currentNumber { font-size: 2em; margin: 20px; }
+#notify { color: red; font-size: 1.5em; margin: 10px; }
+</style>
 </head>
 <body>
-<h1>整理券番号確認</h1>
-<label>番号入力: <input type="number" id="ticket"></label>
-<button onclick="checkTicket()">確認</button>
-<p>現在呼び出し: <span id="current">0</span></p>
-<p>通知対象: <span id="notify"></span></p>
+<h1>整理券番号入力</h1>
+<input type="number" id="ticketInput" placeholder="番号">
+<button id="submitBtn">登録</button>
+<div id="currentNumber">現在の呼び出し番号: -</div>
+<div id="notify"></div>
 
 <script>
-async function checkTicket(){
-  const ticket = document.getElementById('ticket').value;
-  const res = await fetch('/user/current');
-  const data = await res.json();
-  document.getElementById('current').textContent = data.current;
-  document.getElementById('notify').textContent = data.notify.join(',');
-  if(data.notify.includes(parseInt(ticket))){
-    alert('あなたの番号が近づいています！');
+let myTicket = null;
+const notifyEl = document.getElementById("notify");
+const currentEl = document.getElementById("currentNumber");
+const inputEl = document.getElementById("ticketInput");
+const btnEl = document.getElementById("submitBtn");
+
+// 登録
+btnEl.addEventListener("click",()=>{
+  myTicket = parseInt(inputEl.value);
+  if(myTicket) {
+    notifyEl.textContent = "登録完了: "+myTicket;
+    inputEl.disabled=true; btnEl.disabled=true;
+  }
+});
+
+// 通知用関数
+function checkNotification(data){
+  if(!myTicket) return;
+  const notifyList = data.notify;
+  if(notifyList.includes(myTicket)){
+    notifyEl.textContent = "もうすぐ呼ばれます！";
+    if(Notification.permission==="granted"){
+      new Notification("整理券通知",{
+        body: `あなたの番号 ${myTicket} がもうすぐです！`
+      });
+    }
   }
 }
-setInterval(checkTicket,3000);
+
+// 定期更新
+function update(){
+  fetch("/user/current")
+  .then(r=>r.json())
+  .then(data=>{
+    currentEl.textContent = "現在の呼び出し番号: "+data.current;
+    checkNotification(data);
+  });
+}
+setInterval(update,1000);
+
+// 通知権限リクエスト
+if("Notification" in window){
+  if(Notification.permission!=="granted" && Notification.permission!=="denied"){
+    Notification.requestPermission();
+  }
+}
 </script>
 </body>
 </html>
