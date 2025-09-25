@@ -1,15 +1,46 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html>
 <head>
 <meta charset="UTF-8">
-<title>入場管理</title>
-<script src="https://unpkg.com/html5-qrcode"></script>
+<title>Admin Enter</title>
 </head>
 <body>
-<h1>入場チェックイン</h1>
-<h2>現在の呼び出し番号: <span id="current-ticket">0</span></h2>
-<div id="checkin-msg" style="color:red"></div>
-<div id="qr-reader" style="width:500px;"></div>
-<script src="../script.js"></script>
+<h1>チェックイン管理</h1>
+<p>現在呼び出し番号: <span id="current">-</span></p>
+<video id="camera" autoplay></video>
+<script src="https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js"></script>
+<script>
+const video = document.getElementById('camera');
+const currentSpan = document.getElementById('current');
+
+navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+.then(stream => {
+  video.srcObject = stream;
+  video.setAttribute("playsinline", true);
+  video.play();
+  requestAnimationFrame(scan);
+}).catch(err => alert("カメラにアクセスできません: " + err));
+
+function scan() {
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const code = jsQR(imageData.data, canvas.width, canvas.height);
+  if(code){
+    fetch('/admin/checkin',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ ticket: code.data })
+    }).then(r=>r.json()).then(resp=>{
+      if(resp.ok) alert("チェックイン承認: "+code.data);
+    });
+  }
+  fetch('/user/current').then(r=>r.json()).then(d=>currentSpan.innerText=d.current || "-");
+  requestAnimationFrame(scan);
+}
+</script>
 </body>
 </html>
