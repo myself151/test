@@ -1,38 +1,74 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html>
 <head>
 <meta charset="UTF-8">
-<title>管理者設定</title>
+<title>管理者画面</title>
 </head>
 <body>
-<h1>管理者設定</h1>
+<h1>管理者画面</h1>
 
-<!-- パスワード設定 -->
-<div id="password-div">
-  <label>新規パスワード: <input type="password" id="admin-password"></label>
-  <button id="set-password">決定</button>
-</div>
+<label>管理者パスワード: <input type="password" id="adminPass"></label>
+<button onclick="setPassword()">決定</button>
+<br><br>
 
-<!-- 最大人数設定 -->
-<div>
-  <label>場内最大人数: <input type="number" id="max-inside"></label>
-  <button id="set-max">設定</button>
-</div>
+<label>場内最大人数: <input type="number" id="maxVenue" value="50"></label>
+<label>呼び出し人数: <input type="number" id="notifyCount" value="3"></label>
+<button onclick="setVenue()">設定</button>
+<br><br>
 
-<!-- 整理券発行 -->
-<div>
-  <label>最初の番号: <input type="number" id="start"></label>
-  <label>最後の番号: <input type="number" id="end"></label>
-  <button id="issue-tickets">整理券発行</button>
-</div>
+<label>整理券開始番号: <input type="number" id="startNum"></label>
+<label>整理券終了番号: <input type="number" id="endNum"></label>
+<button onclick="issueTickets()">発行</button>
+<br><br>
 
-<!-- PDF生成 -->
-<button id="pdf-btn">PDF生成</button>
+<button onclick="resetSystem()">リセット</button>
+<button onclick="showStats()">集計</button>
+<div id="stats"></div>
 
-<!-- 集計とリセット -->
-<button id="summary-btn">集計</button>
-<button id="reset-btn">リセット</button>
+<script>
+let password = null;
 
-<script src="../script.js"></script>
+function setPassword(){
+  password = document.getElementById('adminPass').value;
+  alert('管理者パスワード設定完了');
+}
+
+function setVenue(){
+  fetch('/admin/setVenue',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      maxVenue: document.getElementById('maxVenue').value,
+      notifyCount: document.getElementById('notifyCount').value
+    })
+  }).then(r=>r.json()).then(()=>alert('設定完了'));
+}
+
+function issueTickets(){
+  fetch('/admin/issue',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      start: document.getElementById('startNum').value,
+      end: document.getElementById('endNum').value
+    })
+  }).then(r=>r.json()).then(res=>{
+    alert('整理券発行完了: '+res.file);
+  });
+}
+
+function resetSystem(){
+  fetch('/admin/reset',{method:'POST'}).then(r=>r.json()).then(()=>alert('リセット完了'));
+}
+
+function showStats(){
+  fetch('/user/current')
+    .then(r=>r.json())
+    .then(data=>{
+      document.getElementById('stats').innerText =
+        `現在呼び出し番号: ${data.current}\n通知対象: ${data.notify.join(',')}`;
+    });
+}
+</script>
 </body>
 </html>
