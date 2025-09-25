@@ -2,47 +2,31 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>退場チェックアウト</title>
+<title>管理者 - チェックアウト</title>
 </head>
 <body>
-<h1>退場チェックアウト</h1>
-<video id="camera" autoplay></video>
-<p>現在場内人数: <span id="insideCount">0</span></p>
+<h1>チェックアウト</h1>
+<video id="video" width="400" height="300" autoplay></video>
 
-<script src="https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
 <script>
-const video = document.getElementById('camera');
-const insideCount = document.getElementById('insideCount');
+const videoElem = document.getElementById('video');
+navigator.mediaDevices.getUserMedia({video:true}).then(stream=>{
+  videoElem.srcObject = stream;
+});
 
-navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}})
-.then(stream=>{video.srcObject=stream; video.play(); requestAnimationFrame(scan);})
-.catch(err=>alert('カメラにアクセスできません: '+err));
-
-function scan(){
-  const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video,0,0,canvas.width,canvas.height);
-  const imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
-  const code = jsQR(imageData.data,canvas.width,canvas.height);
-  if(code){
-    fetch('/admin/checkout',{
+const html5QrCode = new Html5Qrcode("video");
+html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 },
+  async (decodedText, decodedResult)=>{
+    const ticket = parseInt(decodedText);
+    await fetch('/admin/checkout',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ticket:code.data})
-    }).then(r=>r.json()).then(resp=>{
-      if(resp.ok) alert('チェックアウト完了: '+code.data);
+      body:JSON.stringify({ticket})
     });
-  }
-
-  fetch('/user/current').then(r=>r.json()).then(data=>{
-    const inside = data.notify.filter(t=>t).length;
-    insideCount.innerText = inside;
-  });
-
-  requestAnimationFrame(scan);
-}
+  },
+  (errorMessage)=>{}
+);
 </script>
 </body>
 </html>
