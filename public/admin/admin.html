@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>管理者設定</title>
+</head>
+<body>
+<h1>管理者設定</h1>
+
+<!-- パスワード設定 -->
+<div id="password-div">
+  <label>新規パスワード: <input type="password" id="admin-password"></label>
+  <button id="set-password">決定</button>
+</div>
+
+<!-- 最大人数設定 -->
+<div>
+  <label>場内最大人数: <input type="number" id="max-inside"></label>
+  <button id="set-max">設定</button>
+</div>
+
+<!-- 整理券発行 -->
+<div>
+  <label>最初の番号: <input type="number" id="start"></label>
+  <label>最後の番号: <input type="number" id="end"></label>
+  <button id="issue-tickets">整理券発行</button>
+</div>
+
+<!-- PDF生成 -->
+<button id="pdf-btn">PDF生成</button>
+
+<!-- 集計とリセット -->
+<button id="summary-btn">集計</button>
+<button id="reset-btn">リセット</button>
+
+<script src="../script.js"></script>
+</body>
+</html>
