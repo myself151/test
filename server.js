@@ -41,13 +41,11 @@ app.post("/admin/issue", (req, res) => {
   res.json({ issuedTickets: tickets });
 });
 
-// ===== PDF生成（日本語フォント埋め込み・安全両面対応） =====
-app.get("/admin/pdf", async (req, res) => {
+// ===== PDF生成（日本語フォント埋め込み・両面対応） =====
+async function generatePDF(res) {
   if (!tickets.length) return res.status(400).send("整理券未発行");
 
   const doc = new PDFDocument({ size: "A4" });
-
-  // フォント埋め込み（日本語対応）
   const fontPath = path.join(__dirname, "fonts", "NotoSansCJKjp-Regular.otf");
   if (!fs.existsSync(fontPath)) {
     return res.status(500).send("フォントファイルが存在しません: fonts/NotoSansCJKjp-Regular.otf");
@@ -76,26 +74,29 @@ app.get("/admin/pdf", async (req, res) => {
     const urlQR = await QRCode.toDataURL(`https://example.com/user?ticket=${num}`);
     const urlBuf = Buffer.from(urlQR.replace(/^data:image\/png;base64,/, ""), "base64");
 
-    doc.rect(col*boxW, row*boxH, boxW, boxH).stroke();
+    doc.rect(col * boxW, row * boxH, boxW, boxH).stroke();
     doc.fontSize(16).text(`整理券番号: ${num}`, x, y);
-    doc.fontSize(12).text(`こちらのURLです`, x, y+25);
+    doc.fontSize(12).text("こちらのURLです", x, y + 25);
     doc.image(urlBuf, x + 150, y, { width: 50, height: 50 });
-
-    if ((index+1) % (cols*rows) === 0) doc.addPage(); // 表面ページ終了後
 
     // ===== 裏面 =====
     const checkinQR = await QRCode.toDataURL(`${num}`);
     const checkinBuf = Buffer.from(checkinQR.replace(/^data:image\/png;base64,/, ""), "base64");
 
-    doc.rect(col*boxW, row*boxH, boxW, boxH).stroke();
+    doc.addPage(); // 裏面用ページ
+    doc.rect(col * boxW, row * boxH, boxW, boxH).stroke();
     doc.fontSize(16).text("チェックイン用", x, y);
-    doc.fontSize(14).text(`番号: ${num}`, x, y+25);
+    doc.fontSize(14).text(`番号: ${num}`, x, y + 25);
     doc.image(checkinBuf, x + 150, y, { width: 50, height: 50 });
 
-    if ((index+1) % (cols*rows) === 0) doc.addPage(); // 裏面ページ終了後
+    if ((index + 1) % (cols * rows) === 0) doc.addPage(); // 12枚ごとにページ追加
   }
 
   doc.end();
+}
+
+app.get("/admin/pdf", async (req, res) => {
+  await generatePDF(res);
 });
 
 // ===== 集計 =====
@@ -105,7 +106,7 @@ app.get("/admin/summary", (req, res) => {
     checkedIn,
     skipped,
     maxInside,
-    currentCallIndex
+    currentCallIndex,
   });
 });
 
@@ -120,7 +121,7 @@ app.post("/admin/reset", (req, res) => {
 
 // ===== 呼び出し番号取得 =====
 app.get("/user/current", (req, res) => {
-  const current = tickets.slice(currentCallIndex, currentCallIndex+3);
+  const current = tickets.slice(currentCallIndex, currentCallIndex + 3);
   res.json({ currentCall: current });
 });
 
@@ -134,4 +135,35 @@ app.post("/user/checkin", (req, res) => {
 // ===== 利用者キャンセル =====
 app.post("/user/cancel", (req, res) => {
   const { ticketNumber } = req.body;
-  checkedIn = checkedIn.filter(n => n !
+  checkedIn = checkedIn.filter((n) => n !== ticketNumber);
+  res.json({ status: "キャンセル完了" });
+});
+
+// ===== スキップ処理（3分経過） =====
+app.post("/admin/skip", (req, res) => {
+  const { ticketNumber } = req.body;
+  if (!skipped.includes(ticketNumber)) skipped.push(ticketNumber);
+  res.json({ status: "スキップ処理完了" });
+});
+
+// ===== 管理者ページ =====
+app.get("/admin/admin", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/admin/admin.html"));
+});
+app.get("/admin/enter", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/admin/enter.html"));
+});
+app.get("/admin/exit", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/admin/exit.html"));
+});
+
+// ===== 利用者ページ =====
+app.get("/user", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/user.html"));
+});
+
+// ===== サーバー起動 =====
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running at http://localhost:${PORT}`);
+});
