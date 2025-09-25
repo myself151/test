@@ -1,82 +1,44 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<title>利用者画面</title>
-<script src="/socket.io/socket.io.js"></script>
+  <meta charset="UTF-8">
+  <title>利用者画面</title>
 </head>
 <body>
-<h1>利用者画面</h1>
-<p>現在番号: <span id="currentNumber">0</span></p>
+  <h1>利用者画面</h1>
+  <p>現在の番号: <span id="currentNumber">0</span></p>
+  <p>自分の番号を入力: <input type="number" id="myNumber"></p>
+  <button onclick="registerNumber()">登録</button>
 
-<!-- 番号入力フォーム -->
-<label for="numberInput">整理券番号を入力:</label>
-<input type="number" id="numberInput" min="1">
-<button id="registerBtn">登録</button>
+  <p id="notify" style="color:red; font-weight:bold;"></p>
 
-<script>
-const currentNumberElem = document.getElementById("currentNumber");
-const numberInput = document.getElementById("numberInput");
-const registerBtn = document.getElementById("registerBtn");
-let myNumber = null;
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
 
-// WebSocket接続
-const socket = io();
-
-// --- リアルタイム番号更新 ---
-socket.on("update", (data) => {
-  currentNumberElem.textContent = data.currentNumber;
-});
-
-// --- 通知受信 ---
-socket.on("notify", (data) => {
-  if (myNumber && data.number === myNumber) {
-    if (Notification.permission === "granted") {
-      new Notification(`あなたの番号 ${myNumber} が10個前になりました！`);
-    }
-  }
-});
-
-// --- 通知権限確認 ---
-function requestNotification() {
-  if (Notification.permission === "default") {
-    Notification.requestPermission().then(permission => {
-      if (permission !== "granted") {
-        alert("通知を有効にしてください");
+    // 番号登録
+    function registerNumber() {
+      const num = document.getElementById("myNumber").value;
+      if (num) {
+        socket.emit("register", num);
+        alert("登録しました: " + num);
       }
+    }
+
+    // URLパラメータから自動登録
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("number")) {
+      document.getElementById("myNumber").value = params.get("number");
+      registerNumber();
+    }
+
+    socket.on("update", (data) => {
+      document.getElementById("currentNumber").textContent = data.currentNumber;
     });
-  }
-}
-requestNotification();
 
-// --- 番号登録 ---
-registerBtn.onclick = () => {
-  const val = parseInt(numberInput.value);
-  if (!val) return alert("番号を入力してください");
-  myNumber = val;
-
-  fetch("/user/register", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ number: myNumber })
-  })
-    .then(res => res.json())
-    .then(data => {
-      if (data.success) alert(`番号 ${myNumber} を登録しました`);
+    socket.on("notify", (data) => {
+      document.getElementById("notify").textContent = data.message;
     });
-};
-
-// --- フォールバックポーリング（3秒ごと） ---
-setInterval(async () => {
-  try {
-    const res = await fetch("/api/status", { cache: "no-store" });
-    const data = await res.json();
-    currentNumberElem.textContent = data.currentNumber;
-  } catch (e) {
-    console.error("番号取得エラー", e);
-  }
-}, 3000);
-
-</script>
+  </script>
 </body>
 </html>
