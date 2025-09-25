@@ -2,44 +2,45 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>入場チェックイン</title>
+<title>管理者 - チェックイン</title>
 </head>
 <body>
-<h1>入場チェックイン</h1>
-<video id="camera" autoplay></video>
-<p>現在呼び出し番号: <span id="currentCall">-</span></p>
+<h1>チェックイン</h1>
+<video id="video" width="400" height="300" autoplay></video>
+<p>呼び出し番号: <span id="current">0</span></p>
+<p id="message"></p>
 
-<script src="https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
 <script>
-const video = document.getElementById('camera');
-const currentCall = document.getElementById('currentCall');
+const videoElem = document.getElementById('video');
+const currentElem = document.getElementById('current');
+const msgElem = document.getElementById('message');
 
-navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}})
-.then(stream=>{video.srcObject=stream; video.play(); requestAnimationFrame(scan);})
-.catch(err=>alert('カメラにアクセスできません: '+err));
+navigator.mediaDevices.getUserMedia({video:true}).then(stream=>{
+  videoElem.srcObject = stream;
+});
 
-function scan(){
-  const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video,0,0,canvas.width,canvas.height);
-  const imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
-  const code = jsQR(imageData.data,canvas.width,canvas.height);
-  if(code){
-    fetch('/admin/checkin',{
+async function updateCurrent(){
+  const res = await fetch('/user/current');
+  const data = await res.json();
+  currentElem.textContent = data.current || '0';
+}
+setInterval(updateCurrent,1000);
+
+const html5QrCode = new Html5Qrcode("video");
+html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 },
+  async (decodedText, decodedResult)=>{
+    const ticket = parseInt(decodedText);
+    await fetch('/admin/checkin',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ticket:code.data})
-    }).then(r=>r.json()).then(resp=>{
-      if(resp.ok){
-        currentCall.innerText = code.data;
-        setTimeout(()=>alert('お進みください'),1000);
-      }
+      body:JSON.stringify({ticket})
     });
-  }
-  requestAnimationFrame(scan);
-}
+    msgElem.textContent = 'お進み下さい';
+    setTimeout(()=>{msgElem.textContent=''},1000);
+  },
+  (errorMessage)=>{}
+);
 </script>
 </body>
 </html>
