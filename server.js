@@ -14,7 +14,7 @@ let checkedIn = [];
 let skipped = [];
 let adminPassword = null;
 let maxInside = 0;
-let currentCallIndex = 0; // 呼び出し番号の進行
+let currentCallIndex = 0;
 
 // ===== 管理者パスワード設定 =====
 app.post("/admin/setpassword", (req, res) => {
@@ -40,7 +40,7 @@ app.post("/admin/issue", (req, res) => {
   res.json({ issuedTickets: tickets });
 });
 
-// ===== PDF生成（両面対応・化け文字修正版） =====
+// ===== PDF生成（安全両面対応） =====
 app.get("/admin/pdf", async (req, res) => {
   if (!tickets.length) return res.status(400).send("整理券未発行");
 
@@ -56,34 +56,33 @@ app.get("/admin/pdf", async (req, res) => {
   const boxW = pageWidth / cols;
   const boxH = pageHeight / rows;
 
-  for (let index = 0; index < tickets.length; index++) {
-    const num = tickets[index];
+  for (const [index, num] of tickets.entries()) {
     const col = index % cols;
     const row = Math.floor(index / cols) % rows;
     const x = col * boxW + 10;
     const y = row * boxH + 10;
 
     // ===== 表面 =====
+    const urlQR = await QRCode.toDataURL(`https://example.com/user?ticket=${num}`);
+    const urlBuf = Buffer.from(urlQR.replace(/^data:image\/png;base64,/, ""), "base64");
+
     doc.rect(col*boxW, row*boxH, boxW, boxH).stroke();
     doc.fontSize(18).text(`整理券: ${num}`, x, y);
     doc.fontSize(12).text(`こちらのURLです`, x, y+25);
+    doc.image(urlBuf, x + 150, y, { width: 50, height: 50 });
 
-    const urlQR = await QRCode.toDataURL(`https://example.com/user?ticket=${num}`);
-    const urlBase64 = urlQR.replace(/^data:image\/png;base64,/, "");
-    doc.image(Buffer.from(urlBase64, "base64"), x + 150, y, { width: 50, height: 50 });
-
-    if ((index+1) % (cols*rows) === 0) doc.addPage(); // 表面ページ終了後次ページ
+    if ((index+1) % (cols*rows) === 0) doc.addPage(); // 表面ページ終了後
 
     // ===== 裏面 =====
+    const checkinQR = await QRCode.toDataURL(`${num}`);
+    const checkinBuf = Buffer.from(checkinQR.replace(/^data:image\/png;base64,/, ""), "base64");
+
     doc.rect(col*boxW, row*boxH, boxW, boxH).stroke();
     doc.fontSize(18).text("チェックイン用", x, y);
     doc.fontSize(14).text(`番号: ${num}`, x, y+25);
+    doc.image(checkinBuf, x + 150, y, { width: 50, height: 50 });
 
-    const checkinQR = await QRCode.toDataURL(`${num}`);
-    const checkinBase64 = checkinQR.replace(/^data:image\/png;base64,/, "");
-    doc.image(Buffer.from(checkinBase64, "base64"), x + 150, y, { width: 50, height: 50 });
-
-    if ((index+1) % (cols*rows) === 0) doc.addPage(); // 裏面ページ終了後次ページ
+    if ((index+1) % (cols*rows) === 0) doc.addPage(); // 裏面ページ終了後
   }
 
   doc.end();
@@ -111,7 +110,7 @@ app.post("/admin/reset", (req, res) => {
 
 // ===== 呼び出し番号取得 =====
 app.get("/user/current", (req, res) => {
-  const current = tickets.slice(currentCallIndex, currentCallIndex+3); // 3つ先まで表示
+  const current = tickets.slice(currentCallIndex, currentCallIndex+3);
   res.json({ currentCall: current });
 });
 
