@@ -59,7 +59,7 @@ app.post("/admin/setmax",(req,res)=>{
   res.json({status:"ok",maxInside});
 });
 
-// PDF整理券発行（両面）
+// PDF整理券発行（両面対応、表面QR:URL、裏面QR:番号）
 app.post("/admin/pdf",(req,res)=>{
   const {start,end,url} = req.body;
   const doc = new PDFDocument({size:"A4"});
@@ -67,23 +67,45 @@ app.post("/admin/pdf",(req,res)=>{
   const stream = fs.createWriteStream(filePath);
   doc.pipe(stream);
 
-  const perPage = 12;
+  const perPage = 12; // 1ページ12枚
   let numCount = 0;
+
+  // 表面ページ
   for(let i=start;i<=end;i++){
     const x = 50;
     const y = 50 + (numCount%perPage)*50;
     doc.font(path.join(__dirname,"NotoSansJP-ExtraBold.ttf")).fontSize(14);
-    // 表面番号
-    doc.text(`番号: ${i}`,x,y);
+    doc.text(`番号: ${i}`, x, y);
+
     // 表面QR (URL)
-    const qrSvg = qr.imageSync(`${url}?ticket=${i}`, {type:"png"});
-    doc.image(qrSvg,x+100,y, {width:40,height:40});
-    // 裏面 (チェックイン用)
-    doc.addPage();
-    doc.text(`チェックイン用`,x,y);
-    const qrCheck = qr.imageSync(`${i}`,{type:"png"});
-    doc.image(qrCheck,x+100,y,{width:40,height:40});
+    const qrPng = qr.imageSync(`${url}?ticket=${i}`, {type:"png"});
+    const tmpPath = path.join(__dirname, `tmp_${i}.png`);
+    fs.writeFileSync(tmpPath, qrPng);
+    doc.image(tmpPath, x+100, y, {width:40, height:40});
+    fs.unlinkSync(tmpPath);
+
     numCount++;
+    if(numCount % perPage === 0 && i!==end) doc.addPage();
+  }
+
+  // 裏面ページ
+  numCount = 0;
+  doc.addPage();
+  for(let i=start;i<=end;i++){
+    const x = 50;
+    const y = 50 + (numCount%perPage)*50;
+    doc.font(path.join(__dirname,"NotoSansJP-ExtraBold.ttf")).fontSize(14);
+    doc.text(`チェックイン用`, x, y);
+
+    // 裏面QR (番号のみ)
+    const qrPng = qr.imageSync(`${i}`, {type:"png"});
+    const tmpPath = path.join(__dirname, `tmp_back_${i}.png`);
+    fs.writeFileSync(tmpPath, qrPng);
+    doc.image(tmpPath, x+100, y, {width:40, height:40});
+    fs.unlinkSync(tmpPath);
+
+    numCount++;
+    if(numCount % perPage === 0 && i!==end) doc.addPage();
   }
 
   doc.end();
