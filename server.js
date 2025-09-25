@@ -1,120 +1,140 @@
 const express = require("express");
-const path = require("path");
 const bodyParser = require("body-parser");
 const PDFDocument = require("pdfkit");
-const rateLimit = require("express-rate-limit");
+const path = require("path");
 
 const app = express();
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// ===== DDOS対策（ユーザー側のみ） =====
-const userLimiter = rateLimit({
-  windowMs: 5 * 60 * 1000,
-  max: 100,
-  message: "Too many requests from this IP, try again after 5 minutes",
-});
-app.use("/user", userLimiter);
-
-// ===== 管理者パスワード =====
-let adminPassword = null;
-
-// ===== 整理券管理 =====
-let ticketStart = 1;
-let ticketEnd = 12;
-let currentTicket = ticketStart;
-let issuedTickets = [];
+// ===== データ管理 =====
+let tickets = [];
 let checkedIn = [];
 let skipped = [];
-let waitingUsers = {};
-let maxInside = 0; // admin/adminで設定
+let adminPassword = null;
+let maxInside = 0;
+let currentCallIndex = 0; // 呼び出し番号の進行
 
-// ===== ルート =====
-app.get("/admin/admin", (req, res) => res.sendFile(path.join(__dirname, "public/admin/admin.html")));
-app.get("/admin/enter", (req, res) => res.sendFile(path.join(__dirname, "public/admin/enter.html")));
-app.get("/admin/exit", (req, res) => res.sendFile(path.join(__dirname, "public/admin/exit.html")));
-app.get("/user", (req, res) => res.sendFile(path.join(__dirname, "public/user.html")));
-
-// ===== パスワード設定 =====
+// ===== 管理者パスワード設定 =====
 app.post("/admin/setpassword", (req, res) => {
   const { password } = req.body;
-  if (!adminPassword) {
-    adminPassword = password;
-    return res.json({ status: "ok" });
-  }
-  return res.status(403).json({ status: "already set" });
+  adminPassword = password;
+  res.json({ status: "パスワード設定完了" });
 });
 
 // ===== 最大人数設定 =====
 app.post("/admin/setmax", (req, res) => {
-  const { max } = req.body;
-  maxInside = Number(max);
-  res.json({ status: "ok" });
+  maxInside = Number(req.body.max);
+  res.json({ status: `最大人数を ${maxInside} に設定` });
 });
 
 // ===== 整理券発行 =====
 app.post("/admin/issue", (req, res) => {
   const { start, end } = req.body;
-  ticketStart = start;
-  ticketEnd = end;
-  currentTicket = start;
-  issuedTickets = [];
-  for (let i = start; i <= end; i++) issuedTickets.push(i);
+  tickets = [];
+  for (let i = start; i <= end; i++) tickets.push(i);
   checkedIn = [];
   skipped = [];
-  res.json({ status: "ok", issuedTickets });
+  currentCallIndex = 0;
+  res.json({ issuedTickets: tickets });
 });
 
-// ===== チェックイン =====
-app.post("/user/checkin", (req, res) => {
-  const { ticketNumber } = req.body;
-  if (!checkedIn.includes(ticketNumber)) checkedIn.push(ticketNumber);
-  delete waitingUsers[ticketNumber];
-  res.json({ status: "checkedin" });
-});
+// ===== PDF生成（A4 12分割） =====
+app.get("/admin/pdf", (req, res) => {
+  if (!tickets.length) return res.status(400).send("整理券未発行");
 
-// ===== スキップ処理 =====
-function skipTicket(ticketNumber) {
-  if (!checkedIn.includes(ticketNumber) && !skipped.includes(ticketNumber)) skipped.push(ticketNumber);
-}
-
-// ===== PDF生成 =====
-app.post("/admin/pdf", (req, res) => {
   const doc = new PDFDocument({ size: "A4" });
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", "attachment; filename=tickets.pdf");
   doc.pipe(res);
-  const cols = 3, rows = 4;
-  const width = 595 / cols, height = 842 / rows;
-  let index = 0;
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      if (index >= issuedTickets.length) break;
-      doc.rect(c * width, r * height, width, height).stroke();
-      doc.text(issuedTickets[index], c * width + 10, r * height + 10);
-      index++;
-    }
-  }
+
+  const cols = 3;
+  const rows = 4;
+  const pageWidth = 595;
+  const pageHeight = 842;
+  const boxW = pageWidth / cols;
+  const boxH = pageHeight / rows;
+
+  tickets.forEach((num, index) => {
+    const col = index % cols;
+    const row = Math.floor(index / cols) % rows;
+    const x = col * boxW + 10;
+    const y = row * boxH + 10;
+
+    doc.rect(col*boxW, row*boxH, boxW, boxH).stroke();
+    doc.fontSize(18).text(`整理券: ${num}\nURLはこちらです`, x, y);
+
+    if ((index+1) % (cols*rows) === 0 && index !== 0) doc.addPage();
+  });
+
   doc.end();
 });
 
 // ===== 集計 =====
 app.get("/admin/summary", (req, res) => {
   res.json({
-    issued: issuedTickets.length,
-    checkedIn: checkedIn.length,
-    skipped: skipped.length,
-    maxInside
+    issued: tickets.length,
+    checkedIn,
+    skipped,
+    maxInside,
+    currentCallIndex
   });
 });
 
 // ===== リセット =====
 app.post("/admin/reset", (req, res) => {
-  currentTicket = ticketStart;
+  tickets = [];
   checkedIn = [];
   skipped = [];
-  res.json({ status: "reset" });
+  currentCallIndex = 0;
+  res.json({ status: "リセット完了" });
 });
 
+// ===== 呼び出し番号取得 =====
+app.get("/user/current", (req, res) => {
+  const current = tickets.slice(currentCallIndex, currentCallIndex+3); // 3つ先まで表示
+  res.json({ currentCall: current });
+});
+
+// ===== 利用者チェックイン =====
+app.post("/user/checkin", (req, res) => {
+  const { ticketNumber } = req.body;
+  if (!checkedIn.includes(ticketNumber)) checkedIn.push(ticketNumber);
+  res.json({ status: "チェックイン完了" });
+});
+
+// ===== 利用者キャンセル =====
+app.post("/user/cancel", (req, res) => {
+  const { ticketNumber } = req.body;
+  checkedIn = checkedIn.filter(n => n !== ticketNumber);
+  res.json({ status: "キャンセル完了" });
+});
+
+// ===== スキップ処理（3分経過） =====
+app.post("/admin/skip", (req, res) => {
+  const { ticketNumber } = req.body;
+  if (!skipped.includes(ticketNumber)) skipped.push(ticketNumber);
+  res.json({ status: "スキップ処理完了" });
+});
+
+// ===== 管理者ページ =====
+app.get("/admin/admin", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/admin/admin.html"));
+});
+app.get("/admin/enter", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/admin/enter.html"));
+});
+app.get("/admin/exit", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/admin/exit.html"));
+});
+
+// ===== 利用者ページ =====
+app.get("/user", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/user.html"));
+});
+
+// ===== サーバー起動 =====
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Server running at http://localhost:${PORT}`);
+});
