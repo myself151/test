@@ -40,7 +40,7 @@ app.post("/admin/issue", (req, res) => {
   res.json({ issuedTickets: tickets });
 });
 
-// ===== PDF生成（両面対応） =====
+// ===== PDF生成（両面対応・化け文字修正版） =====
 app.get("/admin/pdf", async (req, res) => {
   if (!tickets.length) return res.status(400).send("整理券未発行");
 
@@ -68,24 +68,22 @@ app.get("/admin/pdf", async (req, res) => {
     doc.fontSize(18).text(`整理券: ${num}`, x, y);
     doc.fontSize(12).text(`こちらのURLです`, x, y+25);
 
-    // 表面QR生成（URL用）
     const urlQR = await QRCode.toDataURL(`https://example.com/user?ticket=${num}`);
     const urlBase64 = urlQR.replace(/^data:image\/png;base64,/, "");
     doc.image(Buffer.from(urlBase64, "base64"), x + 150, y, { width: 50, height: 50 });
 
-    if ((index+1) % (cols*rows) === 0) doc.addPage();
+    if ((index+1) % (cols*rows) === 0) doc.addPage(); // 表面ページ終了後次ページ
 
     // ===== 裏面 =====
     doc.rect(col*boxW, row*boxH, boxW, boxH).stroke();
     doc.fontSize(18).text("チェックイン用", x, y);
     doc.fontSize(14).text(`番号: ${num}`, x, y+25);
 
-    // 裏面QR生成（番号のみ）
     const checkinQR = await QRCode.toDataURL(`${num}`);
     const checkinBase64 = checkinQR.replace(/^data:image\/png;base64,/, "");
     doc.image(Buffer.from(checkinBase64, "base64"), x + 150, y, { width: 50, height: 50 });
 
-    if ((index+1) % (cols*rows) === 0) doc.addPage();
+    if ((index+1) % (cols*rows) === 0) doc.addPage(); // 裏面ページ終了後次ページ
   }
 
   doc.end();
