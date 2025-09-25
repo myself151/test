@@ -1,17 +1,17 @@
 {
   "name": "ticket-system",
   "version": "1.0.0",
-  "description": "整理券管理システム（カメラなし簡易版）",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "express-rate-limit": "^6.7.0",
-    "socket.io": "^4.7.2"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "express-basic-auth": "^1.2.1",
+    "express-rate-limit": "^7.0.0",
+    "pdfkit": "^0.13.0",
+    "qrcode": "^1.5.3",
+    "socket.io": "^4.7.2",
+    "body-parser": "^1.20.2"
   }
 }
