@@ -1,169 +1,122 @@
+// server.js
 const express = require("express");
-const bodyParser = require("body-parser");
-const PDFDocument = require("pdfkit");
-const QRCode = require("qrcode");
 const path = require("path");
 const fs = require("fs");
+const PDFDocument = require("pdfkit");
+const bodyParser = require("body-parser");
+const rateLimit = require("express-rate-limit");
 
 const app = express();
+app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static("public"));
 
-// ===== データ管理 =====
-let tickets = [];
-let checkedIn = [];
-let skipped = [];
+// --- Rate limiter (ユーザー側のみ) ---
+const userLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 100,
+  message: "Too many requests from this IP, please try again after 5 minutes.",
+});
+app.use("/user", userLimiter);
+
+// --- メモリ上データ ---
+let tickets = [];      // 発行済み整理券番号
+let calledIndex = 0;   // 現在呼び出し番号
+let userStatus = {};   // {番号:{checkedIn:bool, skipped:bool, startTime:timestamp}}
+let maxVenue = 10;     // 場内人数
 let adminPassword = null;
-let maxInside = 0;
-let currentCallIndex = 0;
 
-// ===== 管理者パスワード設定 =====
-app.post("/admin/setpassword", (req, res) => {
-  const { password } = req.body;
-  adminPassword = password;
-  res.json({ status: "パスワード設定完了" });
-});
-
-// ===== 最大人数設定 =====
-app.post("/admin/setmax", (req, res) => {
-  maxInside = Number(req.body.max);
-  res.json({ status: `最大人数を ${maxInside} に設定` });
-});
-
-// ===== 整理券発行 =====
-app.post("/admin/issue", (req, res) => {
-  const { start, end } = req.body;
-  tickets = [];
-  for (let i = start; i <= end; i++) tickets.push(i);
-  checkedIn = [];
-  skipped = [];
-  currentCallIndex = 0;
-  res.json({ issuedTickets: tickets });
-});
-
-// ===== PDF生成（日本語フォント埋め込み・両面対応） =====
-async function generatePDF(res) {
-  if (!tickets.length) return res.status(400).send("整理券未発行");
-
+// --- PDF生成 ---
+app.get("/admin/pdf", (req, res) => {
+  if (!tickets.length) return res.send("整理券なし");
   const doc = new PDFDocument({ size: "A4" });
-  const fontPath = path.join(__dirname, "fonts", "NotoSansCJKjp-Regular.otf");
-  if (!fs.existsSync(fontPath)) {
-    return res.status(500).send("フォントファイルが存在しません: fonts/NotoSansCJKjp-Regular.otf");
-  }
+  const fontPath = path.join(__dirname, "fonts", "NotoSansJP-ExtraBold.ttf");
+  if (!fs.existsSync(fontPath)) return res.status(500).send("フォントなし");
   doc.registerFont("NotoSans", fontPath);
   doc.font("NotoSans");
-
   res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", "attachment; filename=tickets.pdf");
   doc.pipe(res);
 
-  const cols = 3;
-  const rows = 4;
-  const pageWidth = 595;
-  const pageHeight = 842;
-  const boxW = pageWidth / cols;
-  const boxH = pageHeight / rows;
-
-  for (const [index, num] of tickets.entries()) {
-    const col = index % cols;
-    const row = Math.floor(index / cols) % rows;
-    const x = col * boxW + 10;
-    const y = row * boxH + 10;
-
-    // ===== 表面 =====
-    const urlQR = await QRCode.toDataURL(`https://example.com/user?ticket=${num}`);
-    const urlBuf = Buffer.from(urlQR.replace(/^data:image\/png;base64,/, ""), "base64");
-
-    doc.rect(col * boxW, row * boxH, boxW, boxH).stroke();
-    doc.fontSize(16).text(`整理券番号: ${num}`, x, y);
-    doc.fontSize(12).text("こちらのURLです", x, y + 25);
-    doc.image(urlBuf, x + 150, y, { width: 50, height: 50 });
-
-    // ===== 裏面 =====
-    const checkinQR = await QRCode.toDataURL(`${num}`);
-    const checkinBuf = Buffer.from(checkinQR.replace(/^data:image\/png;base64,/, ""), "base64");
-
-    doc.addPage(); // 裏面用ページ
-    doc.rect(col * boxW, row * boxH, boxW, boxH).stroke();
-    doc.fontSize(16).text("チェックイン用", x, y);
-    doc.fontSize(14).text(`番号: ${num}`, x, y + 25);
-    doc.image(checkinBuf, x + 150, y, { width: 50, height: 50 });
-
-    if ((index + 1) % (cols * rows) === 0) doc.addPage(); // 12枚ごとにページ追加
-  }
-
-  doc.end();
-}
-
-app.get("/admin/pdf", async (req, res) => {
-  await generatePDF(res);
-});
-
-// ===== 集計 =====
-app.get("/admin/summary", (req, res) => {
-  res.json({
-    issued: tickets.length,
-    checkedIn,
-    skipped,
-    maxInside,
-    currentCallIndex,
+  tickets.forEach((num, i) => {
+    if (i > 0) doc.addPage();
+    // 表
+    doc.text(`整理券番号: ${num}`, 50, 50);
+    doc.text(`QR: URLはこちら`, 50, 100);
+    // 裏
+    doc.addPage();
+    doc.text(`裏面`, 50, 50);
+    doc.text(`チェックイン用QR: ${num}`, 50, 100);
   });
+  doc.end();
 });
 
-// ===== リセット =====
-app.post("/admin/reset", (req, res) => {
-  tickets = [];
-  checkedIn = [];
-  skipped = [];
-  currentCallIndex = 0;
-  res.json({ status: "リセット完了" });
+// --- 管理者チェックイン／exit---
+app.post("/admin/checkin", (req, res) => {
+  const ticket = req.body.ticket;
+  if (userStatus[ticket]) {
+    userStatus[ticket].checkedIn = true;
+    res.json({ ok: true });
+  } else res.json({ ok: false });
 });
 
-// ===== 呼び出し番号取得 =====
+// --- ユーザー登録 ---
+app.post("/user/register", (req, res) => {
+  const number = req.body.number;
+  if (!tickets.includes(number)) tickets.push(number);
+  userStatus[number] = { checkedIn: false, skipped: false, startTime: null };
+  res.json({ ok: true });
+});
+
+// --- 現在呼び出し番号 ---
 app.get("/user/current", (req, res) => {
-  const current = tickets.slice(currentCallIndex, currentCallIndex + 3);
-  res.json({ currentCall: current });
+  const current = tickets[calledIndex] || null;
+  res.json({ current });
 });
 
-// ===== 利用者チェックイン =====
-app.post("/user/checkin", (req, res) => {
-  const { ticketNumber } = req.body;
-  if (!checkedIn.includes(ticketNumber)) checkedIn.push(ticketNumber);
-  res.json({ status: "チェックイン完了" });
+// --- スキップ判定（呼び出し番号から3分経過） ---
+setInterval(() => {
+  const num = tickets[calledIndex];
+  if (num && !userStatus[num].checkedIn) {
+    const startTime = userStatus[num].startTime || Date.now();
+    if (!userStatus[num].startTime) userStatus[num].startTime = startTime;
+    if (Date.now() - startTime >= 180000) { // 3分経過
+      userStatus[num].skipped = true;
+      calledIndex++;
+    }
+  }
+}, 10000);
+
+// --- 集計 ---
+app.get("/admin/summary", (req, res) => {
+  const total = tickets.length;
+  const checked = Object.values(userStatus).filter(u => u.checkedIn).length;
+  const skipped = Object.values(userStatus).filter(u => u.skipped).length;
+  res.json({ total, checked, skipped });
 });
 
-// ===== 利用者キャンセル =====
-app.post("/user/cancel", (req, res) => {
-  const { ticketNumber } = req.body;
-  checkedIn = checkedIn.filter((n) => n !== ticketNumber);
-  res.json({ status: "キャンセル完了" });
+// --- リセット ---
+app.post("/admin/reset", (req, res) => {
+  calledIndex = 0;
+  Object.keys(userStatus).forEach(k => {
+    userStatus[k].checkedIn = false;
+    userStatus[k].skipped = false;
+    userStatus[k].startTime = null;
+  });
+  res.json({ ok: true });
 });
 
-// ===== スキップ処理（3分経過） =====
-app.post("/admin/skip", (req, res) => {
-  const { ticketNumber } = req.body;
-  if (!skipped.includes(ticketNumber)) skipped.push(ticketNumber);
-  res.json({ status: "スキップ処理完了" });
+// --- 管理者パスワード設定（admin/adminのみ） ---
+app.post("/admin/setpassword", (req, res) => {
+  if (!adminPassword) {
+    adminPassword = req.body.password;
+    res.json({ ok: true });
+  } else res.json({ ok: false, msg: "すでに設定済み" });
 });
 
-// ===== 管理者ページ =====
-app.get("/admin/admin", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/admin/admin.html"));
-});
-app.get("/admin/enter", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/admin/enter.html"));
-});
-app.get("/admin/exit", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/admin/exit.html"));
+// --- 管理者場内人数設定 ---
+app.post("/admin/setvenue", (req, res) => {
+  maxVenue = req.body.max || 10;
+  res.json({ ok: true, maxVenue });
 });
 
-// ===== 利用者ページ =====
-app.get("/user", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/user.html"));
-});
-
-// ===== サーバー起動 =====
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
-});
+app.listen(3000, () => console.log("Server running on http://localhost:3000"));
