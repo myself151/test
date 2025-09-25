@@ -2,72 +2,75 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>管理者画面</title>
+<title>管理者 - 設定</title>
 </head>
 <body>
-<h1>管理者画面</h1>
+<h1>管理者 - 設定</h1>
 
-<label>管理者パスワード: <input type="password" id="adminPass"></label>
-<button onclick="setPassword()">決定</button>
+<label>管理者パスワード: <input type="password" id="password"></label>
+<button onclick="setPassword()">設定</button>
 <br><br>
 
 <label>場内最大人数: <input type="number" id="maxVenue" value="50"></label>
-<label>呼び出し人数: <input type="number" id="notifyCount" value="3"></label>
+<label>通知数: <input type="number" id="notifyCount" value="3"></label>
 <button onclick="setVenue()">設定</button>
 <br><br>
 
-<label>整理券開始番号: <input type="number" id="startNum"></label>
-<label>整理券終了番号: <input type="number" id="endNum"></label>
-<button onclick="issueTickets()">発行</button>
+<label>整理券開始番号: <input type="number" id="start"></label>
+<label>終了番号: <input type="number" id="end"></label>
+<button onclick="issue()">整理券発行(PDF)</button>
 <br><br>
 
-<button onclick="resetSystem()">リセット</button>
-<button onclick="showStats()">集計</button>
-<div id="stats"></div>
+<button onclick="resetAll()">リセット</button>
+<button onclick="aggregate()">集計</button>
 
 <script>
-let password = null;
-
-function setPassword(){
-  password = document.getElementById('adminPass').value;
-  alert('管理者パスワード設定完了');
-}
-
-function setVenue(){
-  fetch('/admin/setVenue',{
+async function setPassword(){
+  const pw = document.getElementById('password').value;
+  await fetch('/admin/setPassword',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      maxVenue: document.getElementById('maxVenue').value,
-      notifyCount: document.getElementById('notifyCount').value
-    })
-  }).then(r=>r.json()).then(()=>alert('設定完了'));
-}
-
-function issueTickets(){
-  fetch('/admin/issue',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      start: document.getElementById('startNum').value,
-      end: document.getElementById('endNum').value
-    })
-  }).then(r=>r.json()).then(res=>{
-    alert('整理券発行完了: '+res.file);
+    body:JSON.stringify({password:pw})
   });
+  alert('パスワード設定完了');
 }
 
-function resetSystem(){
-  fetch('/admin/reset',{method:'POST'}).then(r=>r.json()).then(()=>alert('リセット完了'));
+async function setVenue(){
+  const maxVenue = document.getElementById('maxVenue').value;
+  const notifyCount = document.getElementById('notifyCount').value;
+  await fetch('/admin/setVenue',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({maxVenue,notifyCount})
+  });
+  alert('設定完了');
 }
 
-function showStats(){
-  fetch('/user/current')
-    .then(r=>r.json())
-    .then(data=>{
-      document.getElementById('stats').innerText =
-        `現在呼び出し番号: ${data.current}\n通知対象: ${data.notify.join(',')}`;
-    });
+async function issue(){
+  const start = document.getElementById('start').value;
+  const end = document.getElementById('end').value;
+  const res = await fetch('/admin/issue',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({start,end})
+  });
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'tickets.pdf';
+  a.click();
+}
+
+async function resetAll(){
+  await fetch('/admin/reset',{method:'POST'});
+  alert('リセット完了');
+}
+
+function aggregate(){
+  fetch('/user/current').then(r=>r.json()).then(data=>{
+    alert(`呼び出し番号: ${data.current}, 通知対象: ${data.notify.join(',')}`);
+  });
 }
 </script>
 </body>
