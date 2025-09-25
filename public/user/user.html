@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>利用者画面</title>
+</head>
+<body>
+<h1>整理券番号確認</h1>
+<label>番号入力: <input type="number" id="ticket"></label>
+<button onclick="checkTicket()">確認</button>
+<p>現在呼び出し: <span id="current">0</span></p>
+<p>通知対象: <span id="notify"></span></p>
+
+<script>
+async function checkTicket(){
+  const ticket = document.getElementById('ticket').value;
+  const res = await fetch('/user/current');
+  const data = await res.json();
+  document.getElementById('current').textContent = data.current;
+  document.getElementById('notify').textContent = data.notify.join(',');
+  if(data.notify.includes(parseInt(ticket))){
+    alert('あなたの番号が近づいています！');
+  }
+}
+setInterval(checkTicket,3000);
+</script>
+</body>
+</html>
