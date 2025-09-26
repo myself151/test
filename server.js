@@ -1,109 +1,109 @@
-// server.js
 const express = require("express");
-const bodyParser = require("body-parser");
 const fs = require("fs");
 const path = require("path");
 const PDFDocument = require("pdfkit");
+const QRCode = require("qrcode");
+const bodyParser = require("body-parser");
 
 const app = express();
+const PORT = 3000;
+
+// 📂 静的ファイル（/public 以下すべて配信）
+app.use(express.static(path.join(__dirname, "public")));
 app.use(bodyParser.json());
 
-// ✅ 静的ファイル (フロントエンド) を配信
-app.use(express.static(path.join(__dirname, "public")));
-
-// ✅ フォントの絶対パス (ユーザーの環境にあるフォントファイル)
-const fontPath = path.join(__dirname, "NotoSansJP-ExtraBold.ttf");
-
-// ==================================================
-// 整理券 PDF 生成
-// ==================================================
-app.post("/admin/pdf", (req, res) => {
-  const { start, end, url } = req.body;
-
-  if (!start || !end) {
-    return res.status(400).json({ error: "start と end を指定してください" });
-  }
-
-  const filePath = path.join(__dirname, "tickets.pdf");
-  const doc = new PDFDocument({ size: "A4", margin: 50 });
-
-  // ファイルに保存
-  const stream = fs.createWriteStream(filePath);
-  doc.pipe(stream);
-
-  // ✅ フォント登録
-  if (fs.existsSync(fontPath)) {
-    doc.registerFont("NotoSansJP", fontPath);
-  } else {
-    console.warn("⚠ フォントファイルが見つかりません:", fontPath);
-  }
-
-  const perPage = 12; // 1ページあたり整理券数
-  let numCount = 0;
-
-  for (let i = start; i <= end; i++) {
-    if (numCount > 0 && numCount % perPage === 0) {
-      doc.addPage();
-    }
-
-    const x = 70 + (numCount % 3) * 160; // 横方向の配置
-    const y = 70 + (Math.floor((numCount % perPage) / 3) * 200); // 縦方向の配置
-
-    // チケット枠
-    doc.rect(x, y, 140, 180).stroke();
-
-    // 番号 (中央に大きく表示)
-    doc.font("NotoSansJP")
-      .fontSize(40)
-      .text(`No.${i}`, x, y + 60, { width: 140, align: "center" });
-
-    // URL (小さめに下部へ)
-    if (url) {
-      doc.fontSize(10).text(url, x, y + 150, { width: 140, align: "center" });
-    }
-
-    numCount++;
-  }
-
-  // ✅ PDF 完了
-  doc.end();
-
-  // ✅ 書き込み完了後にレスポンス返却
-  stream.on("finish", () => {
-    res.download(filePath, "tickets.pdf", (err) => {
-      if (err) {
-        console.error("PDF送信エラー:", err);
-      }
-    });
-  });
+// ✅ HTMLページのルーティング
+app.get("/admin/admin", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/admin/admin.html"));
 });
 
-// ==================================================
-// サンプル：呼び出し番号ロジック（簡易版）
-// ==================================================
-let calledNumber = 0;
-let issuedNumbers = [];
+app.get("/admin/enter", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/admin/enter.html"));
+});
 
+app.get("/admin/exit", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/admin/exit.html"));
+});
+
+app.get("/user", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/user/user.html"));
+});
+
+// ✅ 状態保存ファイル
+const dataFile = path.join(__dirname, "data.json");
+let state = {
+  tickets: [],
+  currentCall: 0,
+  checkedOut: 0,
+  maxInside: 10,
+};
+
+// 初期ロード
+if (fs.existsSync(dataFile)) {
+  state = JSON.parse(fs.readFileSync(dataFile, "utf8"));
+}
+
+// 状態保存関数
+function saveState() {
+  fs.writeFileSync(dataFile, JSON.stringify(state, null, 2));
+}
+
+// 🎫 整理券発行
 app.post("/ticket", (req, res) => {
-  const ticketNo = issuedNumbers.length + 1;
-  issuedNumbers.push(ticketNo);
+  const ticketNo = state.tickets.length + 1;
+  state.tickets.push(ticketNo);
+  saveState();
   res.json({ ticket: ticketNo });
 });
 
+// 📢 呼び出し更新
 app.post("/admin/call", (req, res) => {
-  const { maxCapacity, checkedOut } = req.body;
-  const inside = issuedNumbers.filter(n => n > checkedOut && n <= calledNumber);
-  const canEnter = maxCapacity - inside.length;
-
-  if (canEnter > 0) {
-    calledNumber += canEnter;
+  const available = state.maxInside - (state.tickets.length - state.checkedOut);
+  if (available > 0) {
+    state.currentCall += 1;
   }
-
-  res.json({ calledNumber, canEnter });
+  saveState();
+  res.json({ currentCall: state.currentCall });
 });
 
-// ==================================================
-const PORT = 3000;
+// 🚪 チェックアウト
+app.post("/checkout", (req, res) => {
+  state.checkedOut += 1;
+  saveState();
+  res.json({ checkedOut: state.checkedOut });
+});
+
+// 📄 PDF生成（両面）
+app.post("/admin/pdf", async (req, res) => {
+  const { start, end, url } = req.body;
+  const doc = new PDFDocument({ size: "A4" });
+  const filePath = path.join(__dirname, "tickets.pdf");
+  const stream = fs.createWriteStream(filePath);
+  doc.pipe(stream);
+
+  for (let i = start; i <= end; i++) {
+    // 表面
+    doc.fontSize(20).text(`整理券 No.${i}`, 100, 100);
+    const qr1 = await QRCode.toDataURL(`${url}?ticket=${i}`);
+    const img1 = Buffer.from(qr1.split(",")[1], "base64");
+    doc.image(img1, 100, 150, { width: 150 });
+    doc.addPage();
+
+    // 裏面
+    doc.fontSize(16).text("チェックイン用", 100, 100);
+    const qr2 = await QRCode.toDataURL(`${i}`);
+    const img2 = Buffer.from(qr2.split(",")[1], "base64");
+    doc.image(img2, 100, 150, { width: 150 });
+    if (i < end) doc.addPage();
+  }
+
+  doc.end();
+  stream.on("finish", () => {
+    res.download(filePath);
+  });
+});
+
+// 🚀 サーバー起動
 app.listen(PORT, () => {
-  console.log(`Server running http://localhost:${PORT}`);
+  console.log(`✅ Server running: http://localhost:${PORT}`);
 });
