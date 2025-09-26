@@ -1,153 +1,109 @@
+// server.js
 const express = require("express");
 const bodyParser = require("body-parser");
-const path = require("path");
 const fs = require("fs");
+const path = require("path");
 const PDFDocument = require("pdfkit");
-const qr = require("qr-image");
 
 const app = express();
 app.use(bodyParser.json());
+
+// ✅ 静的ファイル (フロントエンド) を配信
 app.use(express.static(path.join(__dirname, "public")));
 
-let tickets = [];
-let checkinList = [];
-let checkoutList = [];
-let currentNumber = 0;
-let maxInside = 5;
+// ✅ フォントの絶対パス (ユーザーの環境にあるフォントファイル)
+const fontPath = path.join(__dirname, "NotoSansJP-ExtraBold.ttf");
 
-// チケット発行
-app.post("/admin/issue", (req, res) => {
-  const { start, end } = req.body;
-  for (let i = start; i <= end; i++) tickets.push(i);
-  updateCallNumber();
-  res.json({ status: "ok", tickets });
-});
-
-// チェックイン
-app.post("/admin/checkin", (req, res) => {
-  const { ticket } = req.body;
-  if (!checkinList.includes(ticket)) checkinList.push(ticket);
-  updateCallNumber();
-  res.json({ status: "checked-in" });
-});
-
-// チェックアウト
-app.post("/admin/checkout", (req, res) => {
-  const { ticket } = req.body;
-  if (!checkoutList.includes(ticket)) checkoutList.push(ticket);
-  updateCallNumber();
-  res.json({ status: "checked-out" });
-});
-
-// 呼び出し番号更新
-function updateCallNumber() {
-  const exited = checkoutList.length;
-  const inside = checkinList.length;
-  currentNumber =
-    exited + Math.min(maxInside, tickets.length - exited - inside);
-}
-
-// 現在呼び出し番号
-app.get("/user/current", (req, res) => {
-  res.json({ current: currentNumber });
-});
-
-// 最大人数設定
-app.post("/admin/setmax", (req, res) => {
-  const { max } = req.body;
-  maxInside = max;
-  updateCallNumber();
-  res.json({ status: "ok", maxInside });
-});
-
-// ✅ PDF生成（両面・壊れない方式）
+// ==================================================
+// 整理券 PDF 生成
+// ==================================================
 app.post("/admin/pdf", (req, res) => {
   const { start, end, url } = req.body;
-  const doc = new PDFDocument({ size: "A4" });
+
+  if (!start || !end) {
+    return res.status(400).json({ error: "start と end を指定してください" });
+  }
+
   const filePath = path.join(__dirname, "tickets.pdf");
+  const doc = new PDFDocument({ size: "A4", margin: 50 });
+
+  // ファイルに保存
   const stream = fs.createWriteStream(filePath);
   doc.pipe(stream);
 
-  const perPage = 12;
+  // ✅ フォント登録
+  if (fs.existsSync(fontPath)) {
+    doc.registerFont("NotoSansJP", fontPath);
+  } else {
+    console.warn("⚠ フォントファイルが見つかりません:", fontPath);
+  }
+
+  const perPage = 12; // 1ページあたり整理券数
   let numCount = 0;
 
-  // 表面ページ
   for (let i = start; i <= end; i++) {
-    const x = 50;
-    const y = 50 + (numCount % perPage) * 60;
-
-    doc.font(path.join(__dirname, "NotoSansJP-ExtraBold.ttf")).fontSize(14);
-    doc.text(`番号: ${i}`, x, y);
-
-    // 表面QR: URL
-    const qrPng = qr.imageSync(`${url}?ticket=${i}`, { type: "png" });
-    const qrFile = path.join(__dirname, `tmp_qr_${i}_front.png`);
-    fs.writeFileSync(qrFile, qrPng);
-    doc.image(qrFile, x + 150, y, { width: 50, height: 50 });
-    fs.unlinkSync(qrFile);
-
-    numCount++;
-    if (numCount % perPage === 0 && i !== end) doc.addPage();
-  }
-
-  // 裏面ページ
-  numCount = 0;
-  doc.addPage();
-  for (let i = start; i <= end; i++) {
-    const x = 50;
-    const y = 50 + (numCount % perPage) * 60;
-
-    doc.font(path.join(__dirname, "NotoSansJP-ExtraBold.ttf")).fontSize(14);
-    doc.text("チェックイン用", x, y);
-
-    // 裏面QR: 番号
-    const qrPng = qr.imageSync(`${i}`, { type: "png" });
-    const qrFile = path.join(__dirname, `tmp_qr_${i}_back.png`);
-    fs.writeFileSync(qrFile, qrPng);
-    doc.image(qrFile, x + 150, y, { width: 50, height: 50 });
-    fs.unlinkSync(qrFile);
-
-    numCount++;
-    if (numCount % perPage === 0 && i !== end) doc.addPage();
-  }
-
-  doc.end();
-  stream.on("finish", () => res.download(filePath));
-});
-
-// 管理者PW
-let adminPassword = null;
-app.use("/admin/admin", (req, res, next) => {
-  const pw = req.query.pw;
-  if (!adminPassword) {
-    if (pw) {
-      adminPassword = pw;
-      next();
-    } else {
-      return res.send(
-        "管理者パスワードをURLパラメータで設定してください。例: /admin/admin?pw=XXXX"
-      );
+    if (numCount > 0 && numCount % perPage === 0) {
+      doc.addPage();
     }
-  } else {
-    if (pw === adminPassword) next();
-    else return res.send("パスワード不正");
+
+    const x = 70 + (numCount % 3) * 160; // 横方向の配置
+    const y = 70 + (Math.floor((numCount % perPage) / 3) * 200); // 縦方向の配置
+
+    // チケット枠
+    doc.rect(x, y, 140, 180).stroke();
+
+    // 番号 (中央に大きく表示)
+    doc.font("NotoSansJP")
+      .fontSize(40)
+      .text(`No.${i}`, x, y + 60, { width: 140, align: "center" });
+
+    // URL (小さめに下部へ)
+    if (url) {
+      doc.fontSize(10).text(url, x, y + 150, { width: 140, align: "center" });
+    }
+
+    numCount++;
   }
+
+  // ✅ PDF 完了
+  doc.end();
+
+  // ✅ 書き込み完了後にレスポンス返却
+  stream.on("finish", () => {
+    res.download(filePath, "tickets.pdf", (err) => {
+      if (err) {
+        console.error("PDF送信エラー:", err);
+      }
+    });
+  });
 });
 
-// HTML配信
-app.get("/admin/admin", (req, res) =>
-  res.sendFile(path.join(__dirname, "public/admin/admin.html"))
-);
-app.get("/admin/enter", (req, res) =>
-  res.sendFile(path.join(__dirname, "public/admin/enter.html"))
-);
-app.get("/admin/exit", (req, res) =>
-  res.sendFile(path.join(__dirname, "public/admin/exit.html"))
-);
-app.get("/user", (req, res) =>
-  res.sendFile(path.join(__dirname, "public/user/user.html"))
-);
+// ==================================================
+// サンプル：呼び出し番号ロジック（簡易版）
+// ==================================================
+let calledNumber = 0;
+let issuedNumbers = [];
 
-app.listen(3000, () =>
-  console.log("Server running on http://localhost:3000")
-);
+app.post("/ticket", (req, res) => {
+  const ticketNo = issuedNumbers.length + 1;
+  issuedNumbers.push(ticketNo);
+  res.json({ ticket: ticketNo });
+});
+
+app.post("/admin/call", (req, res) => {
+  const { maxCapacity, checkedOut } = req.body;
+  const inside = issuedNumbers.filter(n => n > checkedOut && n <= calledNumber);
+  const canEnter = maxCapacity - inside.length;
+
+  if (canEnter > 0) {
+    calledNumber += canEnter;
+  }
+
+  res.json({ calledNumber, canEnter });
+});
+
+// ==================================================
+const PORT = 3000;
+app.listen(PORT, () => {
+  console.log(`Server running http://localhost:${PORT}`);
+});
