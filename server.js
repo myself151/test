@@ -15,12 +15,10 @@ let checkoutList = [];
 let currentNumber = 0;
 let maxInside = 5;
 
-// 整理券発行
+// チケット発行
 app.post("/admin/issue", (req, res) => {
   const { start, end } = req.body;
-  for (let i = start; i <= end; i++) {
-    tickets.push(i);
-  }
+  for (let i = start; i <= end; i++) tickets.push(i);
   updateCallNumber();
   res.json({ status: "ok", tickets });
 });
@@ -49,12 +47,12 @@ function updateCallNumber() {
     exited + Math.min(maxInside, tickets.length - exited - inside);
 }
 
-// 現在の呼び出し番号取得
+// 現在呼び出し番号
 app.get("/user/current", (req, res) => {
   res.json({ current: currentNumber });
 });
 
-// 場内最大人数設定
+// 最大人数設定
 app.post("/admin/setmax", (req, res) => {
   const { max } = req.body;
   maxInside = max;
@@ -62,7 +60,7 @@ app.post("/admin/setmax", (req, res) => {
   res.json({ status: "ok", maxInside });
 });
 
-// PDF整理券生成（破損しない方式）
+// ✅ PDF生成（両面・壊れない方式）
 app.post("/admin/pdf", (req, res) => {
   const { start, end, url } = req.body;
   const doc = new PDFDocument({ size: "A4" });
@@ -82,8 +80,11 @@ app.post("/admin/pdf", (req, res) => {
     doc.text(`番号: ${i}`, x, y);
 
     // 表面QR: URL
-    const qrStream = qr.image(`${url}?ticket=${i}`, { type: "png" });
-    doc.image(qrStream, x + 150, y, { width: 50, height: 50 });
+    const qrPng = qr.imageSync(`${url}?ticket=${i}`, { type: "png" });
+    const qrFile = path.join(__dirname, `tmp_qr_${i}_front.png`);
+    fs.writeFileSync(qrFile, qrPng);
+    doc.image(qrFile, x + 150, y, { width: 50, height: 50 });
+    fs.unlinkSync(qrFile);
 
     numCount++;
     if (numCount % perPage === 0 && i !== end) doc.addPage();
@@ -100,8 +101,11 @@ app.post("/admin/pdf", (req, res) => {
     doc.text("チェックイン用", x, y);
 
     // 裏面QR: 番号
-    const qrStream = qr.image(`${i}`, { type: "png" });
-    doc.image(qrStream, x + 150, y, { width: 50, height: 50 });
+    const qrPng = qr.imageSync(`${i}`, { type: "png" });
+    const qrFile = path.join(__dirname, `tmp_qr_${i}_back.png`);
+    fs.writeFileSync(qrFile, qrPng);
+    doc.image(qrFile, x + 150, y, { width: 50, height: 50 });
+    fs.unlinkSync(qrFile);
 
     numCount++;
     if (numCount % perPage === 0 && i !== end) doc.addPage();
@@ -111,7 +115,7 @@ app.post("/admin/pdf", (req, res) => {
   stream.on("finish", () => res.download(filePath));
 });
 
-// 管理者パスワード保護
+// 管理者PW
 let adminPassword = null;
 app.use("/admin/admin", (req, res, next) => {
   const pw = req.query.pw;
