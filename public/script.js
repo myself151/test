@@ -1,91 +1,52 @@
-// 共通関数
-async function postJSON(url, data) {
-  const res = await fetch(url, {
+// 共通JS
+
+async function setCapacity() {
+  const max = document.getElementById("maxInput").value;
+  const res = await fetch("/api/capacity", {
     method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify(data)
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ max: parseInt(max) }),
   });
-  return res.json();
+  const data = await res.json();
+  alert("最大人数を更新: " + data.maxCapacity);
 }
 
-// ===== 管理者(admin.html) =====
-const setPasswordBtn = document.getElementById("set-password");
-if (setPasswordBtn) {
-  setPasswordBtn.onclick = async () => {
-    const pw = document.getElementById("admin-password").value;
-    const r = await postJSON("/admin/setpassword", { password: pw });
-    alert(r.status);
-  };
+async function enter() {
+  const res = await fetch("/api/enter", { method: "POST" });
+  const data = await res.json();
+  alert("入場者数: " + data.inside);
 }
 
-const setMaxBtn = document.getElementById("set-max");
-if (setMaxBtn) {
-  setMaxBtn.onclick = async () => {
-    const max = document.getElementById("max-inside").value;
-    const r = await postJSON("/admin/setmax", { max });
-    alert(r.status);
-  };
+async function exit() {
+  const res = await fetch("/api/exit", { method: "POST" });
+  const data = await res.json();
+  alert("入場者数: " + data.inside);
 }
 
-const issueBtn = document.getElementById("issue-tickets");
-if (issueBtn) {
-  issueBtn.onclick = async () => {
-    const start = Number(document.getElementById("start").value);
-    const end = Number(document.getElementById("end").value);
-    const r = await postJSON("/admin/issue", { start, end });
-    alert("整理券発行: " + r.issuedTickets.join(","));
-  };
+async function getTicket() {
+  const res = await fetch("/api/ticket", { method: "POST" });
+  const data = await res.json();
+  document.getElementById("ticketInfo").innerText =
+    "整理券番号: " + data.number + (data.canEnter ? " → 入場可能" : " → 順番待ち");
 }
 
-const pdfBtn = document.getElementById("pdf-btn");
-if (pdfBtn) pdfBtn.onclick = () => window.open("/admin/pdf", "_blank");
+async function generatePDF() {
+  const start = document.getElementById("start").value;
+  const end = document.getElementById("end").value;
+  const url = document.getElementById("url").value;
+  const res = await fetch("/admin/pdf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ start: parseInt(start), end: parseInt(end), url }),
+  });
 
-const summaryBtn = document.getElementById("summary-btn");
-if (summaryBtn) summaryBtn.onclick = async () => {
-  const r = await fetch("/admin/summary").then(res => res.json());
-  alert(`発行:${r.issued}, チェックイン:${r.checkedIn}, スキップ:${r.skipped}, 最大人数:${r.maxInside}`);
-};
-
-const resetBtn = document.getElementById("reset-btn");
-if (resetBtn) resetBtn.onclick = async () => {
-  const r = await postJSON("/admin/reset", {});
-  alert(r.status);
-};
-
-// ===== QR読み取り (enter.html / exit.html) =====
-if (document.getElementById("qr-reader")) {
-  const html5QrCode = new Html5Qrcode("qr-reader");
-  html5QrCode.start(
-    { facingMode: "environment" },
-    { fps: 10, qrbox: 250 },
-    async qrMessage => {
-      const ticketNumber = Number(qrMessage);
-      await postJSON("/user/checkin", { ticketNumber });
-      const msgDiv = document.getElementById("checkin-msg");
-      msgDiv.innerText = "お進みください";
-      setTimeout(()=>{ msgDiv.innerText = ""; }, 1000);
-      // 呼び出し番号更新
-      const cur = await fetch("/admin/summary").then(r => r.json());
-      document.getElementById("current-ticket").innerText = cur.checkedIn.length > 0 ? cur.checkedIn[cur.checkedIn.length-1] : 0;
-    }
-  ).catch(err => console.log(err));
-}
-
-// ===== 利用者(user.html) =====
-const checkinBtn = document.getElementById("checkin-btn");
-if (checkinBtn) {
-  checkinBtn.onclick = async () => {
-    const num = Number(document.getElementById("ticket-number").value);
-    await postJSON("/user/checkin", { ticketNumber: num });
-    alert("チェックイン完了");
-  };
-}
-
-const cancelBtn = document.getElementById("cancel-btn");
-if (cancelBtn) {
-  cancelBtn.onclick = async () => {
-    const num = Number(document.getElementById("ticket-number").value);
-    await postJSON("/user/cancel", { ticketNumber: num });
-    alert("キャンセル完了");
-  };
+  if (res.ok) {
+    const blob = await res.blob();
+    const link = document.createElement("a");
+    link.href = window.URL.createObjectURL(blob);
+    link.download = "tickets.pdf";
+    link.click();
+  } else {
+    alert("PDF生成に失敗しました");
+  }
 }
