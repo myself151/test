@@ -1,71 +1,14 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta charset="UTF-8">
-<title>整理券ユーザー画面</title>
-<style>
-body { font-family: 'Noto Sans JP', sans-serif; text-align:center; }
-#ticketInput { font-size: 1.2em; width: 60px; text-align:center; }
-#submitBtn { font-size: 1em; margin-left: 10px; }
-#currentNumber { font-size: 2em; margin: 20px; }
-#notify { color: red; font-size: 1.5em; margin: 10px; }
-</style>
+  <meta charset="UTF-8">
+  <title>利用者画面</title>
+  <script src="/script.js" defer></script>
 </head>
 <body>
-<h1>整理券番号入力</h1>
-<input type="number" id="ticketInput" placeholder="番号">
-<button id="submitBtn">登録</button>
-<div id="currentNumber">現在の呼び出し番号: -</div>
-<div id="notify"></div>
-
-<script>
-let myTicket = null;
-const notifyEl = document.getElementById("notify");
-const currentEl = document.getElementById("currentNumber");
-const inputEl = document.getElementById("ticketInput");
-const btnEl = document.getElementById("submitBtn");
-
-// 登録
-btnEl.addEventListener("click",()=>{
-  myTicket = parseInt(inputEl.value);
-  if(myTicket) {
-    notifyEl.textContent = "登録完了: "+myTicket;
-    inputEl.disabled=true; btnEl.disabled=true;
-  }
-});
-
-// 通知用関数
-function checkNotification(data){
-  if(!myTicket) return;
-  const notifyList = data.notify;
-  if(notifyList.includes(myTicket)){
-    notifyEl.textContent = "もうすぐ呼ばれます！";
-    if(Notification.permission==="granted"){
-      new Notification("整理券通知",{
-        body: `あなたの番号 ${myTicket} がもうすぐです！`
-      });
-    }
-  }
-}
-
-// 定期更新
-function update(){
-  fetch("/user/current")
-  .then(r=>r.json())
-  .then(data=>{
-    currentEl.textContent = "現在の呼び出し番号: "+data.current;
-    checkNotification(data);
-  });
-}
-setInterval(update,1000);
-
-// 通知権限リクエスト
-if("Notification" in window){
-  if(Notification.permission!=="granted" && Notification.permission!=="denied"){
-    Notification.requestPermission();
-  }
-}
-</script>
+  <h1>利用者UI</h1>
+  <button onclick="getTicket()">整理券発行</button>
+  <p id="ticketInfo"></p>
+  <p id="status"></p>
 </body>
 </html>
