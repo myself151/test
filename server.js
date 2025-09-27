@@ -1,154 +1,150 @@
 const express = require("express");
-const bodyParser = require("body-parser");
-const fs = require("fs");
 const path = require("path");
+const fs = require("fs");
 const PDFDocument = require("pdfkit");
 const QRCode = require("qrcode");
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
-// 静的ファイル
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// ✅ public フォルダを静的公開
 app.use(express.static(path.join(__dirname, "public")));
-app.use(bodyParser.json());
 
-// データ保存ファイル
-const DATA_FILE = path.join(__dirname, "data.json");
-
-// 初期化
-if (!fs.existsSync(DATA_FILE)) {
-  fs.writeFileSync(
-    DATA_FILE,
-    JSON.stringify({
-      currentNumber: 0,
-      lastIssued: 0,
-      maxCapacity: 10,
-      inside: 0,
-    }, null, 2)
-  );
-}
-
-function readData() {
-  return JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
-}
-function writeData(data) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-}
-
-/* ---------------- ユーザーAPI ---------------- */
-// 整理券発行
-app.post("/api/ticket", (req, res) => {
-  const data = readData();
-  data.lastIssued += 1;
-
-  // 呼び出し番号は「入場者が場内最大人数を超えない範囲」で進める
-  const available = data.maxCapacity - data.inside;
-  if (available > 0 && data.currentNumber < data.lastIssued) {
-    data.currentNumber += 1;
-    data.inside += 1;
+// ✅ データ管理用ファイル
+const dataFile = path.join(__dirname, "data.json");
+function loadData() {
+  if (!fs.existsSync(dataFile)) {
+    return { current: 0, issued: [], checkedIn: [], checkedOut: [], capacity: 0, callAhead: 0 };
   }
+  return JSON.parse(fs.readFileSync(dataFile, "utf8"));
+}
+function saveData(data) {
+  fs.writeFileSync(dataFile, JSON.stringify(data, null, 2));
+}
 
-  writeData(data);
-
-  res.json({
-    number: data.lastIssued,
-    canEnter: data.currentNumber >= data.lastIssued,
-    currentNumber: data.currentNumber,
-    inside: data.inside,
-  });
+// ✅ HTMLルート
+app.get("/admin/admin", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/admin/admin.html"));
 });
 
-// 状態取得
+app.get("/admin/enter", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/admin/enter.html"));
+});
+
+app.get("/admin/exit", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/admin/exit.html"));
+});
+
+app.get("/user/user", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/user/user.html"));
+});
+
+// ✅ API: 整理券発行
+app.post("/api/issue", async (req, res) => {
+  let data = loadData();
+  const newNumber = (data.issued.length ? Math.max(...data.issued) : 0) + 1;
+  data.issued.push(newNumber);
+  saveData(data);
+  res.json({ number: newNumber });
+});
+
+// ✅ API: 状態取得
 app.get("/api/status", (req, res) => {
-  res.json(readData());
+  const data = loadData();
+  res.json(data);
 });
 
-/* ---------------- 管理者API ---------------- */
-// 入場処理
-app.post("/api/enter", (req, res) => {
-  const data = readData();
-  data.inside += 1;
-  writeData(data);
-  res.json({ inside: data.inside });
+// ✅ API: チェックイン
+app.post("/api/checkin", (req, res) => {
+  let { number } = req.body;
+  number = parseInt(number);
+  let data = loadData();
+
+  if (!data.checkedIn.includes(number) && data.issued.includes(number)) {
+    data.checkedIn.push(number);
+    saveData(data);
+    return res.json({ success: true });
+  }
+  res.json({ success: false });
 });
 
-// 退場処理
-app.post("/api/exit", (req, res) => {
-  const data = readData();
-  if (data.inside > 0) data.inside -= 1;
-  writeData(data);
-  res.json({ inside: data.inside });
+// ✅ API: チェックアウト
+app.post("/api/checkout", (req, res) => {
+  let { number } = req.body;
+  number = parseInt(number);
+  let data = loadData();
+
+  if (!data.checkedOut.includes(number) && data.checkedIn.includes(number)) {
+    data.checkedOut.push(number);
+    saveData(data);
+    return res.json({ success: true });
+  }
+  res.json({ success: false });
 });
 
-// 最大人数変更
-app.post("/api/capacity", (req, res) => {
-  const { max } = req.body;
-  const data = readData();
-  data.maxCapacity = max;
-  writeData(data);
-  res.json({ maxCapacity: data.maxCapacity });
+// ✅ API: 管理者設定更新（場内人数・呼び出し数）
+app.post("/api/admin/settings", (req, res) => {
+  let { capacity, callAhead } = req.body;
+  let data = loadData();
+  data.capacity = parseInt(capacity) || 0;
+  data.callAhead = parseInt(callAhead) || 0;
+  saveData(data);
+  res.json({ success: true });
 });
 
-/* ---------------- PDF生成 ---------------- */
+// ✅ PDF生成（両面印刷対応）
 app.post("/admin/pdf", async (req, res) => {
   const { start, end, url } = req.body;
-  const doc = new PDFDocument({ size: "A4" });
   const filePath = path.join(__dirname, "tickets.pdf");
+
+  const doc = new PDFDocument({ size: "A4" });
   const stream = fs.createWriteStream(filePath);
   doc.pipe(stream);
 
-  // フォント
   const fontPath = path.join(__dirname, "NotoSansJP-ExtraBold.ttf");
   if (fs.existsSync(fontPath)) {
     doc.font(fontPath);
-  } else {
-    doc.font("Helvetica-Bold");
   }
 
   const perPage = 12;
-  let x = 50, y = 50, count = 0;
+  let count = 0;
 
   for (let i = start; i <= end; i++) {
-    const qrData = await QRCode.toDataURL(`${url}?ticket=${i}`);
-    const qrImage = qrData.replace(/^data:image\/png;base64,/, "");
-    const imgPath = path.join(__dirname, `qr_${i}.png`);
-    fs.writeFileSync(imgPath, qrImage, "base64");
+    // ✅ 表面
+    if (count % perPage === 0 && count !== 0) doc.addPage();
+    const x = 50 + (count % 3) * 180;
+    const y = 50 + (Math.floor((count % perPage) / 3)) * 200;
 
-    // QRコード描画
-    doc.image(imgPath, x, y, { width: 100, height: 100 });
-    doc.fontSize(20).text(`整理券番号: ${i}`, x, y + 110);
+    doc.rect(x, y, 160, 180).stroke();
+    doc.fontSize(20).text(`整理券 ${i}`, x + 20, y + 20);
 
-    fs.unlinkSync(imgPath);
+    const qrDataUrl = await QRCode.toDataURL(`${url}?number=${i}`);
+    const qrBuffer = Buffer.from(qrDataUrl.split(",")[1], "base64");
+    doc.image(qrBuffer, x + 30, y + 50, { fit: [100, 100] });
 
-    x += 200;
+    // ✅ 裏面（次のページに同じ位置）
+    doc.addPage();
+    doc.rect(x, y, 160, 180).stroke();
+    doc.fontSize(16).text("チェックイン用", x + 20, y + 20);
+
+    const qrCheckIn = await QRCode.toDataURL(`${i}`);
+    const qrCheckInBuffer = Buffer.from(qrCheckIn.split(",")[1], "base64");
+    doc.image(qrCheckInBuffer, x + 30, y + 50, { fit: [100, 100] });
+
     count++;
-    if (count % 3 === 0) {
-      x = 50;
-      y += 200;
-    }
-    if (count % perPage === 0 && i < end) {
-      doc.addPage();
-      x = 50;
-      y = 50;
-    }
   }
 
   doc.end();
 
   stream.on("finish", () => {
-    res.download(filePath);
+    res.download(filePath, "tickets.pdf");
   });
 });
 
-/* ---------------- 画面 ---------------- */
-app.get("/admin", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/admin/admin.html"));
-});
-app.get("/user", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/user/user.html"));
-});
-
-/* ---------------- サーバー起動 ---------------- */
+// ✅ サーバー起動
 app.listen(PORT, () => {
-  console.log(`✅ Server running: http://localhost:${PORT}`);
+  console.log(`✅ Server running at http://localhost:${PORT}`);
 });
