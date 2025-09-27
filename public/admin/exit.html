@@ -1,57 +1,12 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<title>管理者・退場</title>
-<style>
-body { font-family: 'Noto Sans JP', sans-serif; text-align:center; }
-#camera { width: 80%; max-width: 500px; margin:20px auto; border:1px solid #ccc; }
-#message { color: green; font-size: 1.2em; margin: 10px; }
-</style>
+  <meta charset="UTF-8">
+  <title>退場カメラ</title>
+  <script src="/script.js" defer></script>
 </head>
 <body>
-<h1>退場チェックアウト</h1>
-<video id="camera" autoplay></video>
-<div id="message"></div>
-
-<script src="https://unpkg.com/jsqr/dist/jsQR.js"></script>
-<script>
-const video = document.getElementById("camera");
-const messageEl = document.getElementById("message");
-
-// カメラ起動
-navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}})
-.then(stream=>{ video.srcObject = stream; })
-.catch(err=>{ alert("カメラのアクセスが許可されません: "+err); });
-
-// QRコード読み取りループ
-const canvas = document.createElement("canvas");
-const ctx = canvas.getContext("2d");
-
-function scanQRCode() {
-  if(video.readyState===video.HAVE_ENOUGH_DATA){
-    canvas.width=video.videoWidth;
-    canvas.height=video.videoHeight;
-    ctx.drawImage(video,0,0,canvas.width,canvas.height);
-    const imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
-    const code = jsQR(imageData.data, canvas.width, canvas.height);
-    if(code){
-      const ticket = parseInt(code.data);
-      if(ticket){
-        fetch("/admin/checkout",{
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({ticket})
-        }).then(r=>{
-          messageEl.textContent="チェックアウト承認: "+ticket;
-          setTimeout(()=>{ messageEl.textContent=""; },1000);
-        });
-      }
-    }
-  }
-  requestAnimationFrame(scanQRCode);
-}
-scanQRCode();
-</script>
+  <h1>退場カメラ画面</h1>
+  <button onclick="exit()">退場</button>
 </body>
 </html>
