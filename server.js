@@ -1,82 +1,154 @@
-// ✅ PDF生成（壊れない方式・両面対応）
-app.post("/admin/pdf", async (req, res) => {
-  try {
-    const { start, end, url } = req.body;
-    const filePath = path.join(__dirname, "tickets.pdf");
+const express = require("express");
+const bodyParser = require("body-parser");
+const fs = require("fs");
+const path = require("path");
+const PDFDocument = require("pdfkit");
+const QRCode = require("qrcode");
 
-    // PDFDocument 作成
-    const doc = new PDFDocument({ size: "A4" });
-    const stream = fs.createWriteStream(filePath);
-    doc.pipe(stream);
+const app = express();
+const PORT = 3000;
 
-    // 1ページに12枚（表面）、次ページが裏面
-    const perPage = 12;
-    const margin = 40;
-    const cols = 3;
-    const rows = 4;
-    const cellWidth = (doc.page.width - margin * 2) / cols;
-    const cellHeight = (doc.page.height - margin * 2) / rows;
+// 静的ファイル
+app.use(express.static(path.join(__dirname, "public")));
+app.use(bodyParser.json());
 
-    const fontPath = path.join(__dirname, "NotoSansJP-ExtraBold.ttf");
-    if (fs.existsSync(fontPath)) {
-      doc.registerFont("Noto", fontPath);
-    }
+// データ保存ファイル
+const DATA_FILE = path.join(__dirname, "data.json");
 
-    for (let i = start; i <= end; i++) {
-      const idx = (i - start) % perPage;
-      const pageIndex = Math.floor((i - start) / perPage);
+// 初期化
+if (!fs.existsSync(DATA_FILE)) {
+  fs.writeFileSync(
+    DATA_FILE,
+    JSON.stringify({
+      currentNumber: 0,
+      lastIssued: 0,
+      maxCapacity: 10,
+      inside: 0,
+    }, null, 2)
+  );
+}
 
-      // 新しいページ
-      if (idx === 0 && i !== start) {
-        doc.addPage();
-      }
+function readData() {
+  return JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
+}
+function writeData(data) {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+}
 
-      // 表面（番号 + 利用者用QR）
-      const col = idx % cols;
-      const row = Math.floor(idx / cols);
-      const x = margin + col * cellWidth;
-      const y = margin + row * cellHeight;
+/* ---------------- ユーザーAPI ---------------- */
+// 整理券発行
+app.post("/api/ticket", (req, res) => {
+  const data = readData();
+  data.lastIssued += 1;
 
-      doc.rect(x, y, cellWidth, cellHeight).stroke();
-      doc.font("Noto").fontSize(16).text(`整理券番号 ${i}`, x + 10, y + 10);
-
-      const qrData = await QRCode.toDataURL(`${url}?num=${i}`);
-      const qrImg = qrData.replace(/^data:image\/png;base64,/, "");
-      const qrBuffer = Buffer.from(qrImg, "base64");
-      doc.image(qrBuffer, x + 10, y + 40, { width: cellWidth - 20 });
-
-      // 12枚ごとに裏面ページを追加
-      if (idx === perPage - 1 || i === end) {
-        doc.addPage();
-        for (let j = 0; j < perPage; j++) {
-          const backIndex = pageIndex * perPage + j + start;
-          if (backIndex > end) break;
-
-          const col2 = j % cols;
-          const row2 = Math.floor(j / cols);
-          const x2 = margin + col2 * cellWidth;
-          const y2 = margin + row2 * cellHeight;
-
-          doc.rect(x2, y2, cellWidth, cellHeight).stroke();
-          doc.font("Noto").fontSize(16).text("チェックイン用", x2 + 10, y2 + 10);
-
-          const qrBackData = await QRCode.toDataURL(String(backIndex));
-          const qrBackImg = qrBackData.replace(/^data:image\/png;base64,/, "");
-          const qrBackBuffer = Buffer.from(qrBackImg, "base64");
-          doc.image(qrBackBuffer, x2 + 10, y2 + 40, { width: cellWidth - 20 });
-        }
-        if (i !== end) doc.addPage(); // 次の表面へ
-      }
-    }
-
-    doc.end();
-
-    // ストリーム完了後にレスポンスを返す
-    stream.on("finish", () => {
-      res.download(filePath, "tickets.pdf");
-    });
-  } catch (err) {
-    console.error("PDF生成エラー:", err);
-    res.status(500).send("PDF生成に失敗しました");
+  // 呼び出し番号は「入場者が場内最大人数を超えない範囲」で進める
+  const available = data.maxCapacity - data.inside;
+  if (available > 0 && data.currentNumber < data.lastIssued) {
+    data.currentNumber += 1;
+    data.inside += 1;
   }
+
+  writeData(data);
+
+  res.json({
+    number: data.lastIssued,
+    canEnter: data.currentNumber >= data.lastIssued,
+    currentNumber: data.currentNumber,
+    inside: data.inside,
+  });
+});
+
+// 状態取得
+app.get("/api/status", (req, res) => {
+  res.json(readData());
+});
+
+/* ---------------- 管理者API ---------------- */
+// 入場処理
+app.post("/api/enter", (req, res) => {
+  const data = readData();
+  data.inside += 1;
+  writeData(data);
+  res.json({ inside: data.inside });
+});
+
+// 退場処理
+app.post("/api/exit", (req, res) => {
+  const data = readData();
+  if (data.inside > 0) data.inside -= 1;
+  writeData(data);
+  res.json({ inside: data.inside });
+});
+
+// 最大人数変更
+app.post("/api/capacity", (req, res) => {
+  const { max } = req.body;
+  const data = readData();
+  data.maxCapacity = max;
+  writeData(data);
+  res.json({ maxCapacity: data.maxCapacity });
+});
+
+/* ---------------- PDF生成 ---------------- */
+app.post("/admin/pdf", async (req, res) => {
+  const { start, end, url } = req.body;
+  const doc = new PDFDocument({ size: "A4" });
+  const filePath = path.join(__dirname, "tickets.pdf");
+  const stream = fs.createWriteStream(filePath);
+  doc.pipe(stream);
+
+  // フォント
+  const fontPath = path.join(__dirname, "NotoSansJP-ExtraBold.ttf");
+  if (fs.existsSync(fontPath)) {
+    doc.font(fontPath);
+  } else {
+    doc.font("Helvetica-Bold");
+  }
+
+  const perPage = 12;
+  let x = 50, y = 50, count = 0;
+
+  for (let i = start; i <= end; i++) {
+    const qrData = await QRCode.toDataURL(`${url}?ticket=${i}`);
+    const qrImage = qrData.replace(/^data:image\/png;base64,/, "");
+    const imgPath = path.join(__dirname, `qr_${i}.png`);
+    fs.writeFileSync(imgPath, qrImage, "base64");
+
+    // QRコード描画
+    doc.image(imgPath, x, y, { width: 100, height: 100 });
+    doc.fontSize(20).text(`整理券番号: ${i}`, x, y + 110);
+
+    fs.unlinkSync(imgPath);
+
+    x += 200;
+    count++;
+    if (count % 3 === 0) {
+      x = 50;
+      y += 200;
+    }
+    if (count % perPage === 0 && i < end) {
+      doc.addPage();
+      x = 50;
+      y = 50;
+    }
+  }
+
+  doc.end();
+
+  stream.on("finish", () => {
+    res.download(filePath);
+  });
+});
+
+/* ---------------- 画面 ---------------- */
+app.get("/admin", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/admin/admin.html"));
+});
+app.get("/user", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/user/user.html"));
+});
+
+/* ---------------- サーバー起動 ---------------- */
+app.listen(PORT, () => {
+  console.log(`✅ Server running: http://localhost:${PORT}`);
 });
