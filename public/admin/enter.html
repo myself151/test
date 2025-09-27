@@ -1,70 +1,12 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<title>管理者・入場</title>
-<style>
-body { font-family: 'Noto Sans JP', sans-serif; text-align:center; }
-#camera { width: 80%; max-width: 500px; margin:20px auto; border:1px solid #ccc; }
-#currentNumber { font-size: 2em; margin: 10px; }
-#message { color: green; font-size: 1.2em; margin: 10px; }
-</style>
+  <meta charset="UTF-8">
+  <title>入場カメラ</title>
+  <script src="/script.js" defer></script>
 </head>
 <body>
-<h1>入場チェックイン</h1>
-<div id="currentNumber">現在の呼び出し番号: -</div>
-<video id="camera" autoplay></video>
-<div id="message"></div>
-
-<script src="https://unpkg.com/jsqr/dist/jsQR.js"></script>
-<script>
-const video = document.getElementById("camera");
-const currentNumberEl = document.getElementById("currentNumber");
-const messageEl = document.getElementById("message");
-
-// カメラ起動
-navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}})
-.then(stream=>{ video.srcObject = stream; })
-.catch(err=>{ alert("カメラのアクセスが許可されません: "+err); });
-
-// QRコード読み取りループ
-const canvas = document.createElement("canvas");
-const ctx = canvas.getContext("2d");
-
-function scanQRCode() {
-  if(video.readyState===video.HAVE_ENOUGH_DATA){
-    canvas.width=video.videoWidth;
-    canvas.height=video.videoHeight;
-    ctx.drawImage(video,0,0,canvas.width,canvas.height);
-    const imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
-    const code = jsQR(imageData.data, canvas.width, canvas.height);
-    if(code){
-      const ticket = parseInt(code.data);
-      if(ticket){
-        fetch("/admin/checkin",{
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({ticket})
-        }).then(r=>{
-          messageEl.textContent="チェックイン承認: "+ticket;
-          setTimeout(()=>{ messageEl.textContent=""; },1000);
-        });
-      }
-    }
-  }
-  requestAnimationFrame(scanQRCode);
-}
-scanQRCode();
-
-// 呼び出し番号取得
-function updateCurrent(){
-  fetch("/user/current")
-  .then(r=>r.json())
-  .then(data=>{
-    currentNumberEl.textContent="現在の呼び出し番号: "+data.current;
-  });
-}
-setInterval(updateCurrent,1000);
-</script>
+  <h1>入場カメラ画面</h1>
+  <button onclick="enter()">入場</button>
 </body>
 </html>
