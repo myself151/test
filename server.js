@@ -1,194 +1,105 @@
-// server.js
 const express = require('express');
+const bodyParser = require('body-parser');
 const fs = require('fs');
 const path = require('path');
-const bodyParser = require('body-parser');
 const PDFDocument = require('pdfkit');
-const qrcode = require('qrcode');
+const QRCode = require('qrcode');
+const cors = require('cors');
 
 const app = express();
-const DATA_FILE = path.join(__dirname, 'data.json');
-const FONT_FILE = path.join(__dirname, 'NotoSansJP-ExtraBold.ttf');
+const PORT = process.env.PORT || 3000;
 
+app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// データ読み込み
-function loadData() {
-    if (!fs.existsSync(DATA_FILE)) return { tickets: [], checkin: [], checkout: [], callIndex: 0 };
-    return JSON.parse(fs.readFileSync(DATA_FILE));
+const DATA_FILE = path.join(__dirname, 'data.json');
+let data = { tickets: [], checkins: [], checkouts: [], currentIndex: 0, maxInside: 0 };
+if (fs.existsSync(DATA_FILE)) data = JSON.parse(fs.readFileSync(DATA_FILE));
+
+function saveData() {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data));
 }
-function saveData(data) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-}
 
-// 管理者ページ
-app.get('/admin/admin', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public/admin/admin.html'));
-});
-app.get('/admin/enter', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public/admin/enter.html'));
-});
-app.get('/admin/exit', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public/admin/exit.html'));
-});
-
-// 利用者ページ
-app.get('/user', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public/user/user.html'));
-});
-
-// 整理券発行
-app.post('/admin/issue', async (req, res) => {
-    const { start, end, url } = req.body;
-    const data = loadData();
-    for (let i = start; i <= end; i++) {
-        const ticket = { number: i, url: url };
-        data.tickets.push(ticket);
-    }
-    saveData(data);
-    res.json({ success: true });
-});
-
-// PDF生成（両面）
-app.post('/admin/pdf', async (req, res) => {
-    const { start, end, url } = req.body;
-    const doc = new PDFDocument({ size: 'A4' });
-    const filePath = path.join(__dirname, 'tickets.pdf');
-    const stream = fs.createWriteStream(filePath);
-    doc.pipe(stream);
-
-    const perPage = 12;
-    let numCount = 0;
-    for (let i = start; i <= end; i++) {
-        if (numCount > 0 && numCount % perPage === 0) doc.addPage();
-        doc.font(FONT_FILE).fontSize(20).text(`整理券番号: ${i}`, 50, 50);
-        const qrData = `${url}?ticket=${i}`;
-        const qrImage = await qrcode.toDataURL(qrData);
-        doc.image(qrImage, 50, 100, { width: 100, height: 100 });
-
-        // 裏面
-        doc.addPage();
-        doc.font(FONT_FILE).fontSize(20).text('チェックイン用', 50, 50);
-        const qrBack = await qrcode.toDataURL(`${i}`);
-        doc.image(qrBack, 50, 100, { width: 100, height: 100 });
-
-        numCount++;
-    }
-
-    doc.end();
-    stream.on('finish', () => res.download(filePath));
-});
-
-// チェックイン/チェックアウト
-app.post('/admin/checkin', (req, res) => {
-    const { number } = req.body;
-    const data = loadData();
-    if (!data.checkin.includes(number)) data.checkin.push(number);
-    saveData(data);
-    res.json({ success: true });
-});
-app.post('/admin/checkout', (req, res) => {
-    const { number } = req.body;
-    const data = loadData();
-    if (!data.checkout.includes(number)) data.checkout.push(number);
-    saveData(data);
-    res.json({ success: true });
-});
-
-// 呼び出し番号取得
-app.get('/admin/current', (req, res) => {
-    const data = loadData();
-    const callIndex = data.callIndex || 0;
-    const currentTicket = data.tickets[callIndex] || null;
-    res.json({ current: currentTicket });
-});
+// --- 管理者用 ---
+app.get('/admin/admin', (req, res) => res.sendFile(path.join(__dirname, 'public/admin/admin.html')));
+app.get('/admin/enter', (req, res) => res.sendFile(path.join(__dirname, 'public/admin/enter.html')));
+app.get('/admin/exit', (req, res) => res.sendFile(path.join(__dirname, 'public/admin/exit.html')));
 
 // 集計
 app.get('/admin/summary', (req, res) => {
-    const data = loadData();
-    res.json({ checkinCount: data.checkin.length, checkoutCount: data.checkout.length });
+  res.json({ checkinCount: data.checkins.length, checkoutCount: data.checkouts.length });
 });
 
 // リセット
 app.post('/admin/reset', (req, res) => {
-    const data = { tickets: [], checkin: [], checkout: [], callIndex: 0 };
-    saveData(data);
-    res.json({ success: true });
+  data.tickets = [];
+  data.checkins = [];
+  data.checkouts = [];
+  data.currentIndex = 0;
+  data.maxInside = 0;
+  saveData();
+  res.sendStatus(200);
 });
 
-app.listen(3000, () => console.log('Server running on http://localhost:3000'));
-// public/script.js
+// チェックイン
+app.post('/admin/checkin', (req, res) => {
+  const number = req.body.number;
+  if (!data.checkins.includes(number)) data.checkins.push(number);
+  saveData();
+  res.sendStatus(200);
+});
 
-async function checkIn(number) {
-  await fetch('/admin/checkin', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ number })
-  });
-  updateCurrent();
-}
+// チェックアウト
+app.post('/admin/checkout', (req, res) => {
+  const number = req.body.number;
+  if (!data.checkouts.includes(number)) data.checkouts.push(number);
+  saveData();
+  res.sendStatus(200);
+});
 
-async function checkOut(number) {
-  await fetch('/admin/checkout', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ number })
-  });
-  updateCurrent();
-}
+// 現在の呼び出し番号
+app.get('/admin/current', (req, res) => {
+  const current = data.tickets[data.currentIndex] || null;
+  res.json({ current });
+});
 
-async function resetData() {
-  await fetch('/admin/reset', { method: 'POST' });
-  updateCurrent();
-  alert('データをリセットしました');
-}
+// --- 利用者用 ---
+app.get('/user/user.html', (req, res) => res.sendFile(path.join(__dirname, 'public/user/user.html')));
 
-async function getSummary() {
-  const res = await fetch('/admin/summary');
-  const data = await res.json();
-  document.getElementById('checkinCount').innerText = data.checkinCount;
-  document.getElementById('checkoutCount').innerText = data.checkoutCount;
-}
+// --- 整理券発行・PDF生成 ---
+app.post('/admin/pdf', async (req, res) => {
+  const { start, end, url } = req.body;
+  const doc = new PDFDocument({ size: 'A4' });
+  const filePath = path.join(__dirname, 'tickets.pdf');
+  const stream = fs.createWriteStream(filePath);
+  doc.pipe(stream);
 
-async function updateCurrent() {
-  const res = await fetch('/admin/current');
-  const data = await res.json();
-  const el = document.getElementById('currentTicket');
-  el.innerText = data.current ? data.current.number : 'なし';
-}
+  const perPage = 12;
+  let count = 0;
+  for (let num = start; num <= end; num++) {
+    const x = (count % 3) * 180 + 20;
+    const y = Math.floor(count / 3) * 150 + 20;
+    doc.font(path.join(__dirname, 'NotoSansJP-ExtraBold.ttf')).fontSize(16).text(`整理券番号: ${num}`, x, y);
+    
+    // 表面QR
+    const qrData = await QRCode.toDataURL(`${url}?ticket=${num}`);
+    const img = qrData.replace(/^data:image\/png;base64,/, "");
+    doc.image(Buffer.from(img, 'base64'), x, y + 30, { width: 100, height: 100 });
 
-// カメラ＋QR読み取り
-async function initCamera(scanCallback) {
-  const video = document.createElement('video');
-  document.body.appendChild(video);
-  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-  video.srcObject = stream;
-  video.setAttribute('playsinline', true);
-  await video.play();
+    // 裏面: チェックイン用QR
+    doc.addPage();
+    doc.fontSize(16).text('チェックイン用', 50, 50);
+    const checkinQR = await QRCode.toDataURL(`${num}`);
+    const checkinImg = checkinQR.replace(/^data:image\/png;base64,/, "");
+    doc.image(Buffer.from(checkinImg, 'base64'), 50, 80, { width: 100, height: 100 });
 
-  const canvas = document.createElement('canvas');
-  const context = canvas.getContext('2d');
-
-  function tick() {
-    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      canvas.height = video.videoHeight;
-      canvas.width = video.videoWidth;
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-      // jsQRやqr-scannerライブラリを使う
-      const code = jsQR(imageData.data, canvas.width, canvas.height);
-      if (code) {
-        scanCallback(code.data);
-      }
-    }
-    requestAnimationFrame(tick);
+    count++;
+    if (count % perPage === 0) doc.addPage();
   }
-  requestAnimationFrame(tick);
-}
 
-// 初期化
-window.addEventListener('DOMContentLoaded', () => {
-  updateCurrent();
-  getSummary();
+  doc.end();
+  stream.on('finish', () => res.json({ path: '/tickets.pdf' }));
 });
+
+app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
