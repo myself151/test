@@ -10,10 +10,9 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ public フォルダを静的公開
+// ✅ public を静的配信
 app.use(express.static(path.join(__dirname, "public")));
 
-// ✅ データ管理用ファイル
 const dataFile = path.join(__dirname, "data.json");
 function loadData() {
   if (!fs.existsSync(dataFile)) {
@@ -26,24 +25,13 @@ function saveData(data) {
 }
 
 // ✅ HTMLルート
-app.get("/admin/admin", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/admin/admin.html"));
-});
-
-app.get("/admin/enter", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/admin/enter.html"));
-});
-
-app.get("/admin/exit", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/admin/exit.html"));
-});
-
-app.get("/user/user", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/user/user.html"));
-});
+app.get("/admin/admin", (req, res) => res.sendFile(path.join(__dirname, "public/admin/admin.html")));
+app.get("/admin/enter", (req, res) => res.sendFile(path.join(__dirname, "public/admin/enter.html")));
+app.get("/admin/exit", (req, res) => res.sendFile(path.join(__dirname, "public/admin/exit.html")));
+app.get("/user/user", (req, res) => res.sendFile(path.join(__dirname, "public/user/user.html")));
 
 // ✅ API: 整理券発行
-app.post("/api/issue", async (req, res) => {
+app.post("/api/issue", (req, res) => {
   let data = loadData();
   const newNumber = (data.issued.length ? Math.max(...data.issued) : 0) + 1;
   data.issued.push(newNumber);
@@ -53,8 +41,7 @@ app.post("/api/issue", async (req, res) => {
 
 // ✅ API: 状態取得
 app.get("/api/status", (req, res) => {
-  const data = loadData();
-  res.json(data);
+  res.json(loadData());
 });
 
 // ✅ API: チェックイン
@@ -85,7 +72,7 @@ app.post("/api/checkout", (req, res) => {
   res.json({ success: false });
 });
 
-// ✅ API: 管理者設定更新（場内人数・呼び出し数）
+// ✅ API: 管理設定
 app.post("/api/admin/settings", (req, res) => {
   let { capacity, callAhead } = req.body;
   let data = loadData();
@@ -95,12 +82,12 @@ app.post("/api/admin/settings", (req, res) => {
   res.json({ success: true });
 });
 
-// ✅ PDF生成（両面印刷対応）
+// ✅ PDF生成（12分割対応：3列×4行 表→裏）
 app.post("/admin/pdf", async (req, res) => {
   const { start, end, url } = req.body;
   const filePath = path.join(__dirname, "tickets.pdf");
 
-  const doc = new PDFDocument({ size: "A4" });
+  const doc = new PDFDocument({ size: "A4", margin: 20 });
   const stream = fs.createWriteStream(filePath);
   doc.pipe(stream);
 
@@ -109,42 +96,65 @@ app.post("/admin/pdf", async (req, res) => {
     doc.font(fontPath);
   }
 
-  const perPage = 12;
+  const cols = 3;
+  const rows = 4;
+  const perPage = cols * rows;
+
+  const boxWidth = 180;
+  const boxHeight = 180;
+  const startX = 40;
+  const startY = 40;
+  const colGap = 20;
+  const rowGap = 20;
+
   let count = 0;
 
   for (let i = start; i <= end; i++) {
-    // ✅ 表面
-    if (count % perPage === 0 && count !== 0) doc.addPage();
-    const x = 50 + (count % 3) * 180;
-    const y = 50 + (Math.floor((count % perPage) / 3)) * 200;
+    const col = count % cols;
+    const row = Math.floor((count % perPage) / cols);
+    const x = startX + col * (boxWidth + colGap);
+    const y = startY + row * (boxHeight + rowGap);
 
-    doc.rect(x, y, 160, 180).stroke();
-    doc.fontSize(20).text(`整理券 ${i}`, x + 20, y + 20);
-
+    // 表面
+    doc.rect(x, y, boxWidth, boxHeight).stroke();
+    doc.fontSize(18).text(`整理券 ${i}`, x + 20, y + 15);
     const qrDataUrl = await QRCode.toDataURL(`${url}?number=${i}`);
     const qrBuffer = Buffer.from(qrDataUrl.split(",")[1], "base64");
-    doc.image(qrBuffer, x + 30, y + 50, { fit: [100, 100] });
-
-    // ✅ 裏面（次のページに同じ位置）
-    doc.addPage();
-    doc.rect(x, y, 160, 180).stroke();
-    doc.fontSize(16).text("チェックイン用", x + 20, y + 20);
-
-    const qrCheckIn = await QRCode.toDataURL(`${i}`);
-    const qrCheckInBuffer = Buffer.from(qrCheckIn.split(",")[1], "base64");
-    doc.image(qrCheckInBuffer, x + 30, y + 50, { fit: [100, 100] });
+    doc.image(qrBuffer, x + 40, y + 50, { fit: [100, 100] });
 
     count++;
+
+    // ページ切り替え
+    if (count % perPage === 0 && i !== end) {
+      doc.addPage();
+    }
+  }
+
+  // 裏面
+  doc.addPage();
+  count = 0;
+  for (let i = start; i <= end; i++) {
+    const col = count % cols;
+    const row = Math.floor((count % perPage) / cols);
+    const x = startX + col * (boxWidth + colGap);
+    const y = startY + row * (boxHeight + rowGap);
+
+    doc.rect(x, y, boxWidth, boxHeight).stroke();
+    doc.fontSize(14).text("チェックイン用", x + 25, y + 15);
+    const qrCheckIn = await QRCode.toDataURL(`${i}`);
+    const qrCheckInBuffer = Buffer.from(qrCheckIn.split(",")[1], "base64");
+    doc.image(qrCheckInBuffer, x + 40, y + 50, { fit: [100, 100] });
+
+    count++;
+    if (count % perPage === 0 && i !== end) {
+      doc.addPage();
+    }
   }
 
   doc.end();
-
-  stream.on("finish", () => {
-    res.download(filePath, "tickets.pdf");
-  });
+  stream.on("finish", () => res.download(filePath, "tickets.pdf"));
 });
 
-// ✅ サーバー起動
 app.listen(PORT, () => {
   console.log(`✅ Server running at http://localhost:${PORT}`);
 });
