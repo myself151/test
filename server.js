@@ -118,3 +118,77 @@ app.post('/admin/reset', (req, res) => {
 });
 
 app.listen(3000, () => console.log('Server running on http://localhost:3000'));
+// public/script.js
+
+async function checkIn(number) {
+  await fetch('/admin/checkin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ number })
+  });
+  updateCurrent();
+}
+
+async function checkOut(number) {
+  await fetch('/admin/checkout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ number })
+  });
+  updateCurrent();
+}
+
+async function resetData() {
+  await fetch('/admin/reset', { method: 'POST' });
+  updateCurrent();
+  alert('データをリセットしました');
+}
+
+async function getSummary() {
+  const res = await fetch('/admin/summary');
+  const data = await res.json();
+  document.getElementById('checkinCount').innerText = data.checkinCount;
+  document.getElementById('checkoutCount').innerText = data.checkoutCount;
+}
+
+async function updateCurrent() {
+  const res = await fetch('/admin/current');
+  const data = await res.json();
+  const el = document.getElementById('currentTicket');
+  el.innerText = data.current ? data.current.number : 'なし';
+}
+
+// カメラ＋QR読み取り
+async function initCamera(scanCallback) {
+  const video = document.createElement('video');
+  document.body.appendChild(video);
+  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+  video.srcObject = stream;
+  video.setAttribute('playsinline', true);
+  await video.play();
+
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+
+  function tick() {
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      canvas.height = video.videoHeight;
+      canvas.width = video.videoWidth;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+      // jsQRやqr-scannerライブラリを使う
+      const code = jsQR(imageData.data, canvas.width, canvas.height);
+      if (code) {
+        scanCallback(code.data);
+      }
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+// 初期化
+window.addEventListener('DOMContentLoaded', () => {
+  updateCurrent();
+  getSummary();
+});
