@@ -269,4 +269,83 @@ app.post("/admin/pdf", async (req, res) => {
     res.status(500).send("PDF生成に失敗しました");
   }
 });
+// ルート → ユーザー画面
+app.get("/", (req, res) => res.redirect("/user/user.html"));
+
+// 管理画面
+app.get("/admin/admin", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/admin/admin.html"));
+});
+
+// 利用者画面
+app.get("/user/user", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/user/user.html"));
+});
+// 現在の呼び出し番号・場内人数・最大人数を返す
+app.get("/status", (req, res) => {
+  const data = readData();
+  res.json({
+    currentNumber: data.currentNumber,
+    inside: data.inside,
+    maxCapacity: data.maxCapacity
+  });
+});
+// 整理券発行（開始番号と終了番号）
+app.post("/admin/admin/issue", (req, res) => {
+  const { start, end } = req.body;
+  const data = readData();
+  for (let num = Number(start); num <= Number(end); num++) {
+    if (!data.distributed.includes(num)) data.distributed.push(num);
+    data.currentNumber = Math.max(data.currentNumber, num);
+  }
+  writeData(data);
+  res.json({ ok: true, currentNumber: data.currentNumber });
+});
+
+// 最大人数設定
+app.post("/admin/admin/setMax", (req, res) => {
+  const { max } = req.body;
+  const data = readData();
+  data.maxCapacity = Number(max);
+  writeData(data);
+  res.json({ ok: true });
+});
+
+// 配布データ・人数リセット
+app.post("/admin/admin/reset", (req, res) => {
+  const data = readData();
+  data.distributed = [];
+  data.currentNumber = 0;
+  data.inside = 0;
+  writeData(data);
+  res.json({ ok: true });
+});
+app.post("/admin/admin/pdf", async (req, res) => {
+  // 先ほどのPDF生成処理と同一、URLだけ /admin/admin に変更
+});
+// チェックイン
+app.post("/enter", (req, res) => {
+  const { number } = req.body;
+  const data = readData();
+
+  if (!data.distributed.includes(Number(number))) {
+    return res.status(400).json({ error: "未配布の番号です" });
+  }
+
+  if (data.inside >= data.maxCapacity) {
+    return res.status(400).json({ error: "場内が満員です" });
+  }
+
+  data.inside++;
+  writeData(data);
+  res.json({ ok: true });
+});
+
+// チェックアウト
+app.post("/exit", (req, res) => {
+  const data = readData();
+  data.inside = Math.max(0, data.inside - 1);
+  writeData(data);
+  res.json({ ok: true });
+});
 
