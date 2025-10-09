@@ -1,93 +1,116 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<title>管理者画面</title>
-<style>
-  body { font-family: "Noto Sans JP", sans-serif; padding:20px; }
-  input, button { font-size: 16px; margin: 5px; }
-  #stats { margin-top: 20px; }
-</style>
+  <meta charset="UTF-8" />
+  <title>管理画面</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #f5f5f5;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 { margin-top: 0; }
+    section {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    input {
+      padding: 5px;
+      margin: 5px 0;
+      width: 120px;
+    }
+    button {
+      padding: 6px 10px;
+      margin-left: 5px;
+    }
+  </style>
 </head>
 <body>
-<h1>管理者画面</h1>
+  <h1>管理画面</h1>
 
-<h2>配布済み番号入力</h2>
-<input type="text" id="distributedNumbers" placeholder="例: 1-12,15,18">
-<button id="updateDistributed">更新</button>
+  <!-- 整理券発行 -->
+  <section>
+    <h2>整理券発行（番号範囲を入力）</h2>
+    <form id="issue-form">
+      開始番号: <input type="number" id="start-number" required>
+      終了番号: <input type="number" id="end-number" required>
+      <button type="submit">発行</button>
+    </form>
+    <div id="issue-result"></div>
+  </section>
 
-<h2>PDF生成</h2>
-<input type="text" id="pdfUrl" placeholder="整理券リンク URL">
-<button id="generatePdf">PDF生成</button>
+  <!-- 最大人数設定 -->
+  <section>
+    <h2>場内最大人数設定</h2>
+    <form id="max-form">
+      最大人数: <input type="number" id="max-capacity" required>
+      <button type="submit">設定</button>
+    </form>
+    <div id="max-result"></div>
+  </section>
 
-<h2>集計 / リセット</h2>
-<button id="statsBtn">集計</button>
-<button id="resetBtn">リセット</button>
+  <!-- PDF発行 -->
+  <section>
+    <h2>PDF発行</h2>
+    <button id="generate-pdf">PDFを生成</button>
+    <a id="pdf-link" href="/tickets.pdf" target="_blank" style="display:none;">PDFを開く</a>
+  </section>
 
-<div id="stats"></div>
+  <!-- リセット -->
+  <section>
+    <h2>全データリセット</h2>
+    <button id="reset-btn" style="background:red;color:white;">リセット</button>
+  </section>
 
-<script src="../script.js"></script>
-<script>
-const distributedInput = document.getElementById("distributedNumbers");
-const updateBtn = document.getElementById("updateDistributed");
-const statsDiv = document.getElementById("stats");
+  <script>
+    // 整理券発行
+    document.getElementById("issue-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const start = document.getElementById("start-number").value;
+      const end = document.getElementById("end-number").value;
+      const res = await fetch("/admin/admin/issue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ start, end })
+      });
+      const data = await res.json();
+      document.getElementById("issue-result").textContent = res.ok
+        ? `発行完了：現在の呼び出し番号は ${data.currentNumber}`
+        : "発行に失敗しました";
+    });
 
-updateBtn.addEventListener("click", () => {
-  const val = distributedInput.value.trim();
-  let numbers = [];
-  if(val) {
-    val.split(",").forEach(range => {
-      if(range.includes("-")){
-        const [start,end] = range.split("-").map(Number);
-        for(let i=start;i<=end;i++) numbers.push(i);
+    // 最大人数設定
+    document.getElementById("max-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const max = document.getElementById("max-capacity").value;
+      const res = await fetch("/admin/admin/setMax", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ max })
+      });
+      document.getElementById("max-result").textContent = res.ok ? "設定完了" : "失敗しました";
+    });
+
+    // PDF発行
+    document.getElementById("generate-pdf").addEventListener("click", async () => {
+      const res = await fetch("/admin/admin/pdf", { method: "POST" });
+      if (res.ok) {
+        document.getElementById("pdf-link").style.display = "inline-block";
       } else {
-        numbers.push(Number(range));
+        alert("PDF生成に失敗しました");
       }
     });
-  }
-  fetch("/admin/issue", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ distributed: numbers })
-  }).then(r => r.json()).then(data=>{
-    alert("配布済み番号を更新しました");
-  });
-});
 
-// PDF生成
-document.getElementById("generatePdf").addEventListener("click", () => {
-  const url = document.getElementById("pdfUrl").value.trim();
-  fetch("/admin/pdf", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ start: 1, end: 12, url }) // ここは例として1-12
-  }).then(r=>r.blob())
-    .then(blob=>{
-      const link = document.createElement("a");
-      link.href = window.URL.createObjectURL(blob);
-      link.download = "tickets.pdf";
-      link.click();
+    // リセット
+    document.getElementById("reset-btn").addEventListener("click", async () => {
+      if (!confirm("本当にリセットしますか？")) return;
+      const res = await fetch("/admin/admin/reset", { method: "POST" });
+      if (res.ok) location.reload();
     });
-});
-
-// 集計
-document.getElementById("statsBtn").addEventListener("click", () => {
-  fetch("/admin/stats").then(r=>r.json()).then(data=>{
-    statsDiv.innerHTML = `
-      配布済み番号数: ${data.distributed}<br>
-      チェックイン人数: ${data.checkedIn}<br>
-      チェックアウト人数: ${data.checkedOut}<br>
-      現在番号: ${data.currentNumber}
-    `;
-  });
-});
-
-// リセット
-document.getElementById("resetBtn").addEventListener("click", () => {
-  if(confirm("本当にリセットしますか？")){
-    fetch("/admin/reset", { method:"POST" }).then(r=>r.json()).then(()=>alert("リセットしました"));
-  }
-});
-</script>
+  </script>
 </body>
 </html>
