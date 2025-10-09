@@ -144,3 +144,63 @@ app.post("/exit",(req,res)=>{
 });
 
 app.listen(PORT,()=>console.log(`✅ サーバー起動 http://localhost:${PORT}`));
+// ...前略（express, fs, path, bodyParser, PDFKit, qrcodeの読み込みと設定）...
+
+// PDF生成（両面・表と裏を分離）
+app.post("/admin/pdf", async (req,res)=>{
+  try{
+    const { start, end, url } = req.body;
+    const filePath = path.join(__dirname,"tickets.pdf");
+    const doc = new PDFDocument({ size:"A4", margin:30, autoFirstPage:false });
+    const stream = fs.createWriteStream(filePath);
+    doc.pipe(stream);
+
+    const fontPath = path.join(__dirname,"NotoSansJP-ExtraBold.ttf");
+    doc.registerFont("JP", fontPath);
+
+    const perPage = 12;
+    const cols = 2;
+    const rows = 6;
+    const ticketWidth = 250;
+    const ticketHeight = 120;
+
+    let count=0;
+    for(let num=start; num<=end; num++){
+      // ===== 表面 =====
+      if(count%perPage===0) doc.addPage();
+      const col = count%cols;
+      const row = Math.floor((count%perPage)/cols);
+      const x = 50 + col*(ticketWidth+20);
+      const y = 50 + row*(ticketHeight+20);
+
+      const qrDataUrl = await qrcode.toDataURL(`${url}?number=${num}`);
+      const qrBuffer = Buffer.from(qrDataUrl.replace(/^data:image\/png;base64,/, ""),"base64");
+
+      doc.rect(x,y,ticketWidth,ticketHeight).stroke();
+      doc.image(qrBuffer,x+10,y+10,{width:80,height:80});
+      doc.font("JP").fontSize(18).text(`整理券番号: ${num}`,x+100,y+40);
+
+      // ===== 裏面 =====
+      // 表と同じページに描画すると重なるため、次ページに配置
+      doc.addPage();
+      const backX = 50;
+      const backY = 50;
+      const qrBackUrl = await qrcode.toDataURL(`${num}`);
+      const qrBackBuf = Buffer.from(qrBackUrl.replace(/^data:image\/png;base64,/, ""),"base64");
+
+      doc.rect(backX,backY,ticketWidth,ticketHeight).stroke();
+      doc.image(qrBackBuf,backX+10,backY+10,{width:80,height:80});
+      doc.font("JP").fontSize(18).text(`チェックイン用`,backX+100,backY+40);
+
+      count++;
+    }
+
+    doc.end();
+    stream.on("finish",()=>res.download(filePath,"tickets.pdf"));
+
+  }catch(e){
+    console.error(e);
+    res.status(500).send("PDF生成に失敗しました");
+  }
+});
+
