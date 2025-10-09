@@ -53,10 +53,14 @@
     <div id="max-result"></div>
   </section>
 
-  <!-- PDF発行 -->
+  <!-- PDF発行（範囲指定） -->
   <section>
-    <h2>PDF発行</h2>
-    <button id="generate-pdf">PDFを生成</button>
+    <h2>PDF発行（番号範囲指定）</h2>
+    <form id="pdf-form">
+      開始番号: <input type="number" id="pdf-start" required>
+      終了番号: <input type="number" id="pdf-end" required>
+      <button type="submit">PDF生成</button>
+    </form>
     <a id="pdf-link" href="/tickets.pdf" target="_blank" style="display:none;">PDFを開く</a>
   </section>
 
@@ -95,11 +99,19 @@
       document.getElementById("max-result").textContent = res.ok ? "設定完了" : "失敗しました";
     });
 
-    // PDF発行
-    document.getElementById("generate-pdf").addEventListener("click", async () => {
-      const res = await fetch("/admin/admin/pdf", { method: "POST" });
+    // PDF発行（範囲指定）
+    document.getElementById("pdf-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const start = document.getElementById("pdf-start").value;
+      const end = document.getElementById("pdf-end").value;
+      const res = await fetch("/admin/admin/pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ start, end })
+      });
       if (res.ok) {
         document.getElementById("pdf-link").style.display = "inline-block";
+        document.getElementById("pdf-link").href = "/tickets.pdf?" + Date.now(); // キャッシュ回避
       } else {
         alert("PDF生成に失敗しました");
       }
