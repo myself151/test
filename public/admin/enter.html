@@ -3,10 +3,58 @@
 <head>
   <meta charset="UTF-8">
   <title>入場カメラ</title>
+  <style>
+    body {
+      text-align: center;
+      font-family: sans-serif;
+    }
+    #message {
+      font-size: 2em;
+      color: green;
+      margin-top: 20px;
+      display: none;
+    }
+    video {
+      width: 100%;
+      max-width: 400px;
+    }
+  </style>
 </head>
 <body>
   <h1>QRをかざしてください（入場）</h1>
-  <video autoplay playsinline style="width:100%;max-width:400px;"></video>
-  <script src="/script.js"></script>
+  <video autoplay playsinline></video>
+  <div id="message">✅ お進みください</div>
+
+  <script>
+    if ("BarcodeDetector" in window) {
+      const video = document.querySelector("video");
+      const message = document.getElementById("message");
+
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+        .then(stream => { video.srcObject = stream; video.play(); });
+
+      const detector = new BarcodeDetector({ formats: ["qr_code"] });
+
+      async function scan() {
+        try {
+          const barcodes = await detector.detect(video);
+          if (barcodes.length > 0) {
+            const number = new URL(barcodes[0].rawValue).searchParams.get("number");
+            const res = await fetch("/enter", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ number })
+            });
+            if (res.ok) {
+              message.style.display = "block";
+              setTimeout(() => { message.style.display = "none"; }, 3000);
+            }
+          }
+        } catch {}
+        requestAnimationFrame(scan);
+      }
+      scan();
+    }
+  </script>
 </body>
 </html>
