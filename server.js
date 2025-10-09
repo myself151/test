@@ -348,4 +348,49 @@ app.post("/exit", (req, res) => {
   writeData(data);
   res.json({ ok: true });
 });
+// 🧾 PDF生成（範囲指定版）
+app.post("/admin/admin/pdf", async (req, res) => {
+  try {
+    const { start, end } = req.body;
+    const filePath = path.join(__dirname, "tickets.pdf");
+    const doc = new PDFDocument({ size: "A4", margin: 30, autoFirstPage: false });
+    const stream = fs.createWriteStream(filePath);
+    doc.pipe(stream);
+
+    const fontPath = path.join(__dirname, "NotoSansJP-ExtraBold.ttf");
+    doc.registerFont("JP", fontPath);
+
+    const perPage = 12;
+    const cols = 2;
+    const rows = 6;
+    const ticketWidth = 250;
+    const ticketHeight = 120;
+    let count = 0;
+
+    for (let num = Number(start); num <= Number(end); num++) {
+      if (count % perPage === 0) doc.addPage();
+      const col = count % cols;
+      const row = Math.floor((count % perPage) / cols);
+      const x = 50 + col * (ticketWidth + 20);
+      const y = 50 + row * (ticketHeight + 20);
+
+      const qrDataUrl = await qrcode.toDataURL(`${req.protocol}://${req.get('host')}/enter?number=${num}`);
+      const qrBuffer = Buffer.from(qrDataUrl.replace(/^data:image\/png;base64,/, ""), "base64");
+
+      doc.rect(x, y, ticketWidth, ticketHeight).stroke();
+      doc.image(qrBuffer, x + 10, y + 10, { width: 80, height: 80 });
+      doc.font("JP").fontSize(18).text(`整理券番号: ${num}`, x + 100, y + 40);
+
+      count++;
+    }
+
+    doc.end();
+    stream.on("finish", () => {
+      res.download(filePath, "tickets.pdf");
+    });
+  } catch (e) {
+    console.error("PDF生成エラー:", e);
+    res.status(500).send("PDF生成に失敗しました");
+  }
+});
 
