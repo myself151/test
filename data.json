@@ -1,0 +1,7 @@
+{
+  "currentNumber": 0,
+  "distributed": [],
+  "checkedIn": 0,
+  "checkedOut": 0,
+  "maxCapacity": 20
+}
