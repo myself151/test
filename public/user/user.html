@@ -1,11 +1,50 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>利用者画面</title>
+  <meta charset="UTF-8" />
+  <title>整理券 呼び出し番号</title>
+  <style>
+    body {
+      background: #f0f0f0;
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+    #current-number {
+      font-size: 5em;
+      font-weight: bold;
+      margin: 20px;
+    }
+    #inside-status {
+      font-size: 1.5em;
+      color: #555;
+    }
+  </style>
 </head>
 <body>
-  <h1>整理券システム</h1>
-  <p>QRコードを受け取り、入場口でかざしてください。</p>
+  <h1>現在の呼び出し番号</h1>
+  <div id="current-number">-</div>
+  <div id="inside-status"></div>
+
+  <script>
+    async function updateStatus() {
+      try {
+        const res = await fetch("/status");
+        const data = await res.json();
+        document.getElementById("current-number").textContent = data.currentNumber || "-";
+        document.getElementById("inside-status").textContent =
+          `場内人数: ${data.inside} / 最大 ${data.maxCapacity}`;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    setInterval(updateStatus, 3000);
+    updateStatus();
+  </script>
 </body>
 </html>
