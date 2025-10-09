@@ -1,60 +1,57 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>入場カメラ</title>
-  <style>
-    body {
-      text-align: center;
-      font-family: sans-serif;
-    }
-    #message {
-      font-size: 2em;
-      color: green;
-      margin-top: 20px;
-      display: none;
-    }
-    video {
-      width: 100%;
-      max-width: 400px;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>入場カメラ</title>
+<style>
+body { font-family:"Noto Sans JP", sans-serif; text-align:center; margin:0; }
+#video { width:100%; max-width:600px; }
+#message { font-size: 24px; color:green; margin-top:10px; height:30px; }
+</style>
 </head>
 <body>
-  <h1>QRをかざしてください（入場）</h1>
-  <video autoplay playsinline></video>
-  <div id="message">✅ お進みください</div>
+<h1>入場チェックイン</h1>
+<video id="video" autoplay></video>
+<div id="message"></div>
+<script src="../script.js"></script>
+<script src="https://unpkg.com/@zxing/library@latest"></script>
+<script>
+const codeReader = new ZXing.BrowserQRCodeReader();
+const videoElement = document.getElementById("video");
+const messageEl = document.getElementById("message");
 
-  <script>
-    if ("BarcodeDetector" in window) {
-      const video = document.querySelector("video");
-      const message = document.getElementById("message");
+// カメラ開始
+navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+.then(stream => {
+  videoElement.srcObject = stream;
+})
+.catch(err => alert("カメラにアクセスできません: "+err));
 
-      navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-        .then(stream => { video.srcObject = stream; video.play(); });
+function scanLoop() {
+  codeReader.decodeOnceFromVideoDevice(undefined, videoElement)
+    .then(result => {
+      const number = result.text.replace(/\D/g,""); // 数字のみ
+      fetch("/enter", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ number })
+      })
+      .then(r=>r.json())
+      .then(res=>{
+        if(res.ok){
+          messageEl.textContent="お進みください";
+          setTimeout(()=>{ messageEl.textContent=""; scanLoop(); },1000);
+        } else {
+          alert(res.error || "チェックイン失敗");
+          scanLoop();
+        }
+      })
+      .catch(()=>scanLoop());
+    })
+    .catch(()=>{ setTimeout(scanLoop,500); });
+}
 
-      const detector = new BarcodeDetector({ formats: ["qr_code"] });
-
-      async function scan() {
-        try {
-          const barcodes = await detector.detect(video);
-          if (barcodes.length > 0) {
-            const number = new URL(barcodes[0].rawValue).searchParams.get("number");
-            const res = await fetch("/enter", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ number })
-            });
-            if (res.ok) {
-              message.style.display = "block";
-              setTimeout(() => { message.style.display = "none"; }, 3000);
-            }
-          }
-        } catch {}
-        requestAnimationFrame(scan);
-      }
-      scan();
-    }
-  </script>
+scanLoop();
+</script>
 </body>
 </html>
