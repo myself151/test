@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><title>入場チェックイン</title></head>
+<body>
+<h2>入場チェックイン（かざすだけ）</h2>
+<video id="video" width="640" height="480" autoplay playsinline></video>
+<p id="msg"></p>
+<script src="https://unpkg.com/jsqr/dist/jsQR.js"></script>
+<script>
+const video = document.getElementById('video');
+const msg = document.getElementById('msg');
+
+async function startCamera(){
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    video.srcObject = stream;
+  }catch(e){
+    msg.textContent = 'カメラが許可されていません: ' + e;
+  }
+}
+startCamera();
+
+const canvas = document.createElement('canvas');
+const ctx = canvas.getContext('2d');
+let lastScanned = 0;
+
+function tick(){
+  if (video.readyState === video.HAVE_ENOUGH_DATA){
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video,0,0,canvas.width,canvas.height);
+    const imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
+    const code = jsQR(imageData.data, canvas.width, canvas.height);
+    if (code){
+      const num = parseInt(code.data);
+      const now = Date.now();
+      if (isFinite(num) && now - lastScanned > 1500){ // 1.5s デバウンス
+        lastScanned = now;
+        // POST to server
+        fetch('/api/checkin', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ number: num }) })
+        .then(r=>r.json()).then(j=>{
+          msg.textContent = 'チェックイン済: ' + num;
+          setTimeout(()=> msg.textContent = '', 1200);
+        }).catch(e=>{
+          msg.textContent = 'サーバーエラー';
+        });
+      }
+    }
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
