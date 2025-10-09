@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>管理画面</title>
+</head>
+<body>
+  <h1>管理画面</h1>
+  <button id="issue">整理券発行</button>
+  <button id="reset">リセット</button>
+
+  <h2>配布済み番号管理</h2>
+  <p>配布済み: <span id="distributed"></span></p>
+  <p>入場済み: <span id="in"></span></p>
+  <p>退場済み: <span id="out"></span></p>
+
+  <script>
+    document.getElementById("issue").onclick = async () => {
+      const res = await fetch("/admin/issue", { method: "POST" });
+      const data = await res.json();
+      alert(`発行番号: ${data.number}`);
+    };
+
+    document.getElementById("reset").onclick = async () => {
+      await fetch("/admin/reset", { method: "POST" });
+      alert("リセットしました");
+      location.reload();
+    };
+
+    async function updateStats() {
+      const res = await fetch("/admin/stats");
+      const data = await res.json();
+      document.getElementById("distributed").textContent = data.distributed;
+      document.getElementById("in").textContent = data.checkedIn;
+      document.getElementById("out").textContent = data.checkedOut;
+    }
+    setInterval(updateStats, 2000);
+    updateStats();
+  </script>
+</body>
+</html>
