@@ -393,4 +393,39 @@ app.post("/admin/admin/pdf", async (req, res) => {
     res.status(500).send("PDF生成に失敗しました");
   }
 });
+// QR読み取り＋人数カウント共通関数
+function initQrCounter(readerId, initialMode = "enter", displayId = "count") {
+  let currentMode = initialMode; // enter / exit
+  let currentCount = 0;
+
+  function updateDisplay() {
+    document.getElementById(displayId).innerText = `現在人数：${currentCount}人`;
+  }
+
+  function processScan(qrData) {
+    if (currentMode === "enter") {
+      currentCount++;
+    } else {
+      currentCount = Math.max(0, currentCount - 1);
+    }
+    updateDisplay();
+    console.log(`QR読み取り: ${qrData} [${currentMode}]`);
+  }
+
+  function skipCount(num) {
+    currentCount = Math.max(0, currentCount + num);
+    updateDisplay();
+  }
+
+  // HTML5 QR Code 初期化
+  const html5QrCode = new Html5Qrcode(readerId);
+  html5QrCode.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: 250 },
+    processScan,
+    () => {} // 読み取り失敗は無視
+  ).catch(err => console.error("カメラ起動エラー:", err));
+
+  return { setMode: m => currentMode = m, skipCount };
+}
 
