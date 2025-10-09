@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><title>利用者 - 整理券</title></head>
+<body>
+<h2>整理券番号確認</h2>
+
+<label>整理券番号を入力: <input id="ticketInput" type="number"></label>
+<button id="regBtn">登録</button>
+<p>現在呼び出し: <span id="current">-</span></p>
+<p id="notifyArea"></p>
+
+<script>
+let myTicket = null;
+document.getElementById('regBtn').addEventListener('click', ()=>{
+  const v = parseInt(document.getElementById('ticketInput').value);
+  if (!isFinite(v)){ alert('番号を入れてください'); return; }
+  myTicket = v;
+  document.getElementById('notifyArea').innerText = '登録: ' + myTicket;
+});
+
+async function checkLoop(){
+  const res = await fetch('/api/current');
+  const j = await res.json();
+  document.getElementById('current').innerText = j.current || '-';
+  if (myTicket && j.notify && j.notify.includes(myTicket)){
+    // 通知
+    if (Notification.permission === 'granted') {
+      new Notification('整理券通知', { body: `あなたの番号 ${myTicket} が近づいています` });
+    } else {
+      Notification.requestPermission();
+    }
+  }
+  setTimeout(checkLoop, 3000);
+}
+checkLoop();
+</script>
+</body>
+</html>
