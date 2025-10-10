@@ -110,12 +110,43 @@ app.post("/exit", (req, res) => {
   res.json({ ok: true });
 });
 
-// 🧾 PDF生成（日本語対応・両面）
-app.post("/admin/pdf", async (req, res) => {
+// 追加: USER用URLを保存する設定ファイル
+const configFile = path.join(__dirname, "config.json");
+function readConfig() {
+  if (!fs.existsSync(configFile)) {
+    fs.writeFileSync(configFile, JSON.stringify({ userUrl: "" }, null, 2));
+  }
+  return JSON.parse(fs.readFileSync(configFile, "utf-8"));
+}
+function writeConfig(config) {
+  fs.writeFileSync(configFile, JSON.stringify(config, null, 2), "utf-8");
+}
+
+// 追加: USER URL設定API
+app.post("/admin/setUserUrl", (req, res) => {
+  const { userUrl } = req.body;
+  const config = readConfig();
+  config.userUrl = userUrl;
+  writeConfig(config);
+  res.json({ ok: true });
+});
+
+// 修正: PDF生成（表＝USER URL、裏＝番号のみ）
+app.get("/admin/pdf", async (req, res) => {
   try {
-    const { start, end, url } = req.body;
-    const doc = new PDFDocument({ size: "A4", margin: 30, autoFirstPage: false });
+    const start = parseInt(req.query.start);
+    const end = parseInt(req.query.end);
+    if (isNaN(start) || isNaN(end) || start > end) {
+      return res.status(400).send("番号範囲が正しくありません");
+    }
+
+    const config = readConfig();
+    if (!config.userUrl) {
+      return res.status(400).send("USER用URLが設定されていません");
+    }
+
     const filePath = path.join(__dirname, "tickets.pdf");
+    const doc = new PDFDocument({ size: "A4", margin: 30, autoFirstPage: false });
     const stream = fs.createWriteStream(filePath);
     doc.pipe(stream);
 
@@ -130,35 +161,51 @@ app.post("/admin/pdf", async (req, res) => {
     let count = 0;
 
     for (let num = start; num <= end; num++) {
-      if (count % perPage === 0) doc.addPage();
+      if (count % perPage === 0) {
+        doc.addPage();
+      }
       const col = count % cols;
       const row = Math.floor((count % perPage) / cols);
       const x = 50 + col * (ticketWidth + 20);
       const y = 50 + row * (ticketHeight + 20);
 
-      // 表：番号＋URLQR
-      const qrDataUrl = await qrcode.toDataURL(`${url}?number=${num}`);
-      const qrBuffer = Buffer.from(qrDataUrl.replace(/^data:image\/png;base64,/, ""), "base64");
+      // 表QR（利用者用URL）
+      const frontUrl = `${config.userUrl}?number=${num}`;
+      const frontQR = await qrcode.toDataURL(frontUrl);
+      const frontBuffer = Buffer.from(frontQR.replace(/^data:image\/png;base64,/, ""), "base64");
 
+      // 裏QR（番号のみ）
+      const backQR = await qrcode.toDataURL(String(num));
+      const backBuffer = Buffer.from(backQR.replace(/^data:image\/png;base64,/, ""), "base64");
+
+      // 整理券枠
       doc.rect(x, y, ticketWidth, ticketHeight).stroke();
-      doc.image(qrBuffer, x + 10, y + 10, { width: 80, height: 80 });
-      doc.font("JP").fontSize(18).text(`整理券番号: ${num}`, x + 100, y + 40);
 
-      // 裏面：チェックインQR（数字のみ）
-      const backQrUrl = await qrcode.toDataURL(`${num}`);
-      const backQrBuffer = Buffer.from(backQrUrl.replace(/^data:image\/png;base64,/, ""), "base64");
-      doc.addPage();
-      doc.rect(50, 50, ticketWidth, ticketHeight).stroke();
-      doc.image(backQrBuffer, 60, 60, { width: 100, height: 100 });
-      doc.font("JP").fontSize(18).text("チェックイン用", 170, 90);
+      // 表QR（左）
+      doc.image(frontBuffer, x + 10, y + 10, { width: 80, height: 80 });
+      doc.font("JP").fontSize(10).text("表：利用者用", x + 10, y + 95);
+
+      // 裏QR（右）
+      doc.image(backBuffer, x + 100, y + 10, { width: 80, height: 80 });
+      doc.font("JP").fontSize(10).text("裏：入退場用", x + 100, y + 95);
+
+      // 番号中央表示
+      doc.font("JP").fontSize(16).text(
+        `整理券番号: ${num}`,
+        x + 10,
+        y + ticketHeight - 25,
+        { width: ticketWidth - 20, align: "center" }
+      );
 
       count++;
     }
 
     doc.end();
-    stream.on("finish", () => res.download(filePath, "tickets.pdf"));
-  } catch (err) {
-    console.error(err);
+    stream.on("finish", () => {
+      res.download(filePath, `tickets_${start}-${end}.pdf`);
+    });
+  } catch (e) {
+    console.error("PDF生成エラー:", e);
     res.status(500).send("PDF生成に失敗しました");
   }
 });
