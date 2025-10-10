@@ -64,6 +64,31 @@
       callDisplay.textContent = data.number;
     });
 </script>
+<section>
+  <h2>USER URL 設定</h2>
+  <input type="text" id="userUrlInput" placeholder="https://example.com/user">
+  <button id="saveUserUrlBtn" type="button">保存</button>
+</section>
+
+<script>
+document.getElementById('saveUserUrlBtn').addEventListener('click', async () => {
+  const url = document.getElementById('userUrlInput').value;
+  if (!url) {
+    alert('URLを入力してください');
+    return;
+  }
+  const res = await fetch('/admin/setUserUrl', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userUrl: url })
+  });
+  if (res.ok) {
+    alert('USER URLを保存しました');
+  } else {
+    alert('保存に失敗しました');
+  }
+});
+</script>
 
 </body>
 </html>
