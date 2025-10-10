@@ -232,3 +232,31 @@ app.get("/user/current-call", (req, res) => {
 wss.on("connection", (ws) => {
   ws.send(JSON.stringify({ type: "callUpdate", number: currentCallNumber }));
 });
+// PDF発行範囲対応ルート
+app.get('/admin/pdf', (req, res) => {
+  const start = parseInt(req.query.start, 10);
+  const end = parseInt(req.query.end, 10);
+  if (isNaN(start) || isNaN(end) || start > end) {
+    return res.status(400).send('番号範囲が不正です');
+  }
+
+  // PDF生成処理（例：reportlab などでチケットPDF作成）
+  const PDFDocument = require('pdfkit');
+  const fs = require('fs');
+  const path = require('path');
+  res.setHeader('Content-Type', 'application/pdf');
+
+  const doc = new PDFDocument({ size: 'A4' });
+  doc.pipe(res);
+
+  const fontPath = path.join(__dirname, 'NotoSansJP-ExtraBold.ttf');
+  doc.registerFont('NotoSansJP', fontPath);
+  doc.font('NotoSansJP').fontSize(24);
+
+  for (let i = start; i <= end; i++) {
+    doc.text(`整理券番号：${i}`, 100, 100);
+    if (i !== end) doc.addPage();
+  }
+
+  doc.end();
+});
