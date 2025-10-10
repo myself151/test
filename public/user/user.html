@@ -46,5 +46,24 @@
     setInterval(updateStatus, 3000);
     updateStatus();
   </script>
+  <script>
+  const callDisplay = document.getElementById("call-number");
+  const socket = new WebSocket(`ws://${location.host}`);
+
+  socket.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    if (data.type === "callUpdate") {
+      callDisplay.textContent = data.number;
+    }
+  };
+
+  // 初期読み込み時
+  fetch("/user/current-call")
+    .then(res => res.json())
+    .then(data => {
+      callDisplay.textContent = data.number;
+    });
+</script>
+
 </body>
 </html>
